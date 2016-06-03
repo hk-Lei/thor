@@ -91,7 +91,6 @@ public class FileStreamSourceTask extends SourceTask {
             try {
                 Path current = Paths.get(this.path + "/" + filename);
 
-
                 Map<String, Object> offset = context.offsetStorageReader().offset(offsetKey(filename, nextfile));
 
                 stream = new FileInputStream(filename);
