@@ -25,24 +25,14 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.*;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 
 /**
  * FileStreamSourceTask reads from stdin or a file.
  */
 public class FileStreamSourceTask extends SourceTask {
     private static final Logger log = LoggerFactory.getLogger(org.apache.kafka.connect.file.FileStreamSourceTask.class);
-    public static final String CURRENT_FILE_FIELD = "current.file";
-    public static final String NEXT_FILE_FIELD = "next.file";
-    public  static final String CURRENT_POSITION_FIELD = "current.position";
-    public  static final String NEXT_POSITION_FIELD = "next.position";
     private static final Schema VALUE_SCHEMA = Schema.STRING_SCHEMA;
 
     private String path;
@@ -53,6 +43,7 @@ public class FileStreamSourceTask extends SourceTask {
 //    private String fileRoundUnit;
     private DateTimeFormatter format;
     private String filename;
+    private String fileRegex;
 //    private String nextfile;
     private InputStream stream;
     private BufferedReader reader = null;
@@ -60,8 +51,10 @@ public class FileStreamSourceTask extends SourceTask {
     private int offset = 0;
     private String topic = null;
 
-    private Long currentOffset;
-    private Long nextOffset;
+    private Long streamOffset;
+
+    private String partitionKey;
+    private String partitionValue;
 
     @Override
     public String version() {
@@ -73,31 +66,30 @@ public class FileStreamSourceTask extends SourceTask {
         path = props.get(FileStreamSource.PATH_CONFIG);
         filePrefix = props.get(FileStreamSource.FILE_PREFIX_CONFIG);
         fileSuffix = props.get(FileStreamSource.FILE_SUFFIX_CONFIG);
+        fileRegex = filePrefix + "*" + fileSuffix;
+
         String fileDateFormat = props.get(FileStreamSource.FILE_DATE_CONFIG);
         format = DateTimeFormatter.ofPattern(fileDateFormat);
 
         filename = props.get(FileStreamSource.FILE_CONFIG);
 
-//        nextfile = getNextfile();
-//        fileRoundUnit = props.get(FileStreamSource.FILE_ROUNDUNIT);
-//        currentTime = props.get(FileStreamSource.START_TIME);
-
         topic = props.get(FileStreamSource.TOPIC_CONFIG);
         if (topic == null)
             throw new ConnectException("FileStreamSourceTask config missing topic setting");
+
+        partitionKey = "fileType: " + path + File.separator + fileRegex;
+        partitionValue = "topic: " + topic;
     }
 
     @Override
     public List<SourceRecord> poll() throws InterruptedException {
         if (stream == null) {
             try {
-                Path current = Paths.get(this.path + "/" + filename);
-
-                Map<String, Object> offset = context.offsetStorageReader().offset(offsetKey(filename, ""));
-
+                Map<String, Object> offset = context.offsetStorageReader().offset(offsetKey());
                 stream = new FileInputStream(filename);
+
                 if (offset != null) {
-                    Object lastRecordedOffset = offset.get(CURRENT_POSITION_FIELD);
+                    Object lastRecordedOffset = offset.get(filename);
                     if (lastRecordedOffset != null && !(lastRecordedOffset instanceof Long))
                         throw new ConnectException("Offset position is the incorrect type");
                     if (lastRecordedOffset != null) {
@@ -114,9 +106,9 @@ public class FileStreamSourceTask extends SourceTask {
                         }
                         log.debug("Skipped to offset {}", lastRecordedOffset);
                     }
-                    currentOffset = (lastRecordedOffset != null) ? (Long) lastRecordedOffset : 0L;
+                    streamOffset = (lastRecordedOffset != null) ? (Long) lastRecordedOffset : 0L;
                 } else {
-                    currentOffset = 0L;
+                    streamOffset = 0L;
                 }
                 reader = new BufferedReader(new InputStreamReader(stream));
                 log.debug("Opened {} for reading", logFilename());
@@ -162,7 +154,7 @@ public class FileStreamSourceTask extends SourceTask {
                             log.trace("Read a line from {}", logFilename());
                             if (records == null)
                                 records = new ArrayList<>();
-//                            records.add(new SourceRecord(offsetKey(filename, nextfile), offsetValue(currentOffset, nextOffset), topic, VALUE_SCHEMA, line));
+                            records.add(new SourceRecord(offsetKey(), offsetValue(), topic, VALUE_SCHEMA, line));
                         }
                         new ArrayList<SourceRecord>();
                     } while (line != null);
@@ -204,8 +196,8 @@ public class FileStreamSourceTask extends SourceTask {
             String result = new String(buffer, 0, until);
             System.arraycopy(buffer, newStart, buffer, 0, buffer.length - newStart);
             offset = offset - newStart;
-            if (currentOffset != null)
-                nextOffset += newStart;
+            if (streamOffset != null)
+                streamOffset += newStart;
             return result;
         } else {
             return null;
@@ -228,18 +220,14 @@ public class FileStreamSourceTask extends SourceTask {
         }
     }
 
-    private Map<String, String> offsetKey(String filename, String nextfile) {
-        Map<String, String> keyMap = new HashMap<>();
-        keyMap.put(CURRENT_FILE_FIELD, filename);
-        keyMap.put(NEXT_FILE_FIELD, nextfile);
-        return keyMap;
+    private Map<String, String> offsetKey() {
+        return Collections.singletonMap(partitionKey, partitionValue);
     }
 
-    private Map<String, Long> offsetValue(Long curPos, Long nextPos) {
-        Map<String, Long> valueMap = new HashMap<>();
-        valueMap.put(CURRENT_POSITION_FIELD, curPos);
-        valueMap.put(NEXT_FILE_FIELD, nextPos);
-        return valueMap;
+    private Map<String, Long> offsetValue() {
+        Map<String, Long> offsetMap = new HashMap<>();
+        //TODO - 存储 offset
+        return offsetMap;
     }
 
     private String logFilename() {

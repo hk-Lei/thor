@@ -51,6 +51,7 @@
         <log4j.version>2.5</log4j.version>
         <guava.version>19.0</guava.version>
         <clojure.version>1.8.0</clojure.version>
+        <commonlang3.version>3.4</commonlang3.version>
         <junit.version>4.11</junit.version>
     </properties>
 

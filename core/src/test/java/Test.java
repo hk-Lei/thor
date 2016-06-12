@@ -2,10 +2,7 @@ import org.apache.commons.lang3.StringUtils;
 
 import java.io.File;
 import java.io.IOException;
-import java.nio.file.DirectoryStream;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
+import java.nio.file.*;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 
@@ -18,27 +15,25 @@ public class Test {
     public static DateTimeFormatter format;
     public static String currentTime;
     public static void main(String[] args) throws IOException {
-        Path path = Paths.get("D:\\ideaProjects\\moxingxing\\thor\\data");
+        Path path = Paths.get("E:/ideaProjects/moxingxing/thor/data");
 
-        String prefix = "test_";
+        String prefix = "test";
         String suffix = ".dat";
 
-        System.out.println(path.getFileSystem().toString());
+//        System.out.println(path.getFileSystem().toString());
 
-        String pattern = prefix + "*" + suffix;
+        String pattern = prefix + "*";
 
 //        DirectoryStream.Filter<Path> filter = entry -> Pattern.matches(pattern, entry.toString());
 
         System.out.println("\nHas filter applied:");
 
-        try (DirectoryStream<Path> ds = Files.newDirectoryStream(path)) {
+        try (DirectoryStream<Path> ds = Files.newDirectoryStream(path, pattern)) {
             for (Path file : ds) {
-                Path fileName = file.getFileName();
-                if (fileName.toString().startsWith(prefix) && fileName.toString().endsWith(suffix)){
-                    System.out.println(path + File.separator + fileName);
-                }
+                System.out.println(file.toString());
             }
-        }catch(IOException e) {
+            ds.close();
+        } catch (IOException e) {
             System.err.println(e);
         }
 
@@ -55,17 +50,5 @@ public class Test {
             default :
                 return null;
         }
-    }
-
-    public static String escapeExprSpecialWord(String keyword) {
-        if (StringUtils.isNotBlank(keyword)) {
-            String[] fbsArr = { "\\", "$", "(", ")", "+", "[", "]", "?", "^", "{", "}", "|" };
-            for (String key : fbsArr) {
-                if (keyword.contains(key)) {
-                    keyword = keyword.replace(key, "\\" + key);
-                }
-            }
-        }
-        return keyword;
     }
 }
