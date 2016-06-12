@@ -1,5 +1,9 @@
 import com.emar.kafka.connect.FileStreamSourceTask;
+import org.apache.commons.lang3.StringUtils;
 
+import java.io.File;
+import java.io.IOException;
+import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -11,6 +15,9 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+import java.util.stream.Stream;
 
 /**
  * @Author moxingxing
@@ -20,15 +27,30 @@ public class Test {
     public static String fileRoundUnit = "hour";
     public static DateTimeFormatter format;
     public static String currentTime;
-    public static void main(String[] args) {
+    public static void main(String[] args) throws IOException {
+        Path path = Paths.get("D:\\ideaProjects\\moxingxing\\thor\\data");
 
-        Path path = Paths.get("D:\\ideaProjects\\moxingxing\\thor\\data\\test");
+        String prefix = "test_";
+        String suffix = ".dat";
 
-        String file = "test";
+        System.out.println(path.getFileSystem().toString());
 
+        String pattern = prefix + "*" + suffix;
 
-//        Files.find()
-        System.out.println(Files.exists(path));
+//        DirectoryStream.Filter<Path> filter = entry -> Pattern.matches(pattern, entry.toString());
+
+        System.out.println("\nHas filter applied:");
+
+        try (DirectoryStream<Path> ds = Files.newDirectoryStream(path)) {
+            for (Path file : ds) {
+                Path fileName = file.getFileName();
+                if (fileName.toString().startsWith(prefix) && fileName.toString().endsWith(suffix)){
+                    System.out.println(path + File.separator + fileName);
+                }
+            }
+        }catch(IOException e) {
+            System.err.println(e);
+        }
 
     }
 
@@ -43,5 +65,17 @@ public class Test {
             default :
                 return null;
         }
+    }
+
+    public static String escapeExprSpecialWord(String keyword) {
+        if (StringUtils.isNotBlank(keyword)) {
+            String[] fbsArr = { "\\", "$", "(", ")", "+", "[", "]", "?", "^", "{", "}", "|" };
+            for (String key : fbsArr) {
+                if (keyword.contains(key)) {
+                    keyword = keyword.replace(key, "\\" + key);
+                }
+            }
+        }
+        return keyword;
     }
 }

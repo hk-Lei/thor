@@ -25,12 +25,14 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.*;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 
 /**
  * FileStreamSourceTask reads from stdin or a file.
@@ -45,13 +47,13 @@ public class FileStreamSourceTask extends SourceTask {
 
     private String path;
 
-    private String currentTime;
+//    private String currentTime;
     private String filePrefix;
     private String fileSuffix;
-    private String fileRoundUnit;
+//    private String fileRoundUnit;
     private DateTimeFormatter format;
     private String filename;
-    private String nextfile;
+//    private String nextfile;
     private InputStream stream;
     private BufferedReader reader = null;
     private char[] buffer = new char[1024];
@@ -75,11 +77,11 @@ public class FileStreamSourceTask extends SourceTask {
         format = DateTimeFormatter.ofPattern(fileDateFormat);
 
         filename = props.get(FileStreamSource.FILE_CONFIG);
-        nextfile = getNextfile();
 
-        fileRoundUnit = props.get(FileStreamSource.FILE_ROUNDUNIT);
+//        nextfile = getNextfile();
+//        fileRoundUnit = props.get(FileStreamSource.FILE_ROUNDUNIT);
+//        currentTime = props.get(FileStreamSource.START_TIME);
 
-        currentTime = props.get(FileStreamSource.START_TIME);
         topic = props.get(FileStreamSource.TOPIC_CONFIG);
         if (topic == null)
             throw new ConnectException("FileStreamSourceTask config missing topic setting");
@@ -91,7 +93,7 @@ public class FileStreamSourceTask extends SourceTask {
             try {
                 Path current = Paths.get(this.path + "/" + filename);
 
-                Map<String, Object> offset = context.offsetStorageReader().offset(offsetKey(filename, nextfile));
+                Map<String, Object> offset = context.offsetStorageReader().offset(offsetKey(filename, ""));
 
                 stream = new FileInputStream(filename);
                 if (offset != null) {
@@ -160,7 +162,7 @@ public class FileStreamSourceTask extends SourceTask {
                             log.trace("Read a line from {}", logFilename());
                             if (records == null)
                                 records = new ArrayList<>();
-                            records.add(new SourceRecord(offsetKey(filename, nextfile), offsetValue(currentOffset, nextOffset), topic, VALUE_SCHEMA, line));
+//                            records.add(new SourceRecord(offsetKey(filename, nextfile), offsetValue(currentOffset, nextOffset), topic, VALUE_SCHEMA, line));
                         }
                         new ArrayList<SourceRecord>();
                     } while (line != null);
@@ -244,20 +246,20 @@ public class FileStreamSourceTask extends SourceTask {
         return filename;
     }
 
-    private String getNextfile(){
-        return filePrefix + getNextTime() + fileSuffix;
-    }
+//    private String getNextfile(){
+//        return filePrefix + getNextTime() + fileSuffix;
+//    }
 
-    private String getNextTime(){
-        switch (fileRoundUnit) {
-            case "minute" :
-                return LocalDateTime.parse(currentTime, format).plusMinutes(10).format(format);
-            case "hour" :
-                return LocalDateTime.parse(currentTime, format).plusHours(1).format(format);
-            case "day" :
-                return LocalDateTime.parse(currentTime, format).plusDays(1).format(format);
-            default :
-                return null;
-        }
-    }
+//    private String getNextTime(){
+//        switch (fileRoundUnit) {
+//            case "minute" :
+//                return LocalDateTime.parse(currentTime, format).plusMinutes(10).format(format);
+//            case "hour" :
+//                return LocalDateTime.parse(currentTime, format).plusHours(1).format(format);
+//            case "day" :
+//                return LocalDateTime.parse(currentTime, format).plusDays(1).format(format);
+//            default :
+//                return null;
+//        }
+//    }
 }

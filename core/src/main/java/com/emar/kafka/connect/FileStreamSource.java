@@ -28,12 +28,12 @@ public class FileStreamSource extends SourceConnector {
     public static final String FILE_SUFFIX_CONFIG = "file.suffix";
     public static final String FILE_DATE_CONFIG = "file.date";
     public static final String START_TIME = "start.time";
-    public static final String FILE_ROUNDUNIT = "file.roundUnit";
+//    public static final String FILE_ROUNDUNIT = "file.roundUnit";
 
     private static final ConfigDef CONFIG_DEF = new ConfigDef()
             .define(PATH_CONFIG, Type.STRING, Importance.HIGH, "Source path.")
             .define(START_TIME, Type.STRING, Importance.LOW, "Source start time.")
-            .define(FILE_ROUNDUNIT, Type.STRING, Importance.MEDIUM, "Source file round unit.")
+//            .define(FILE_ROUNDUNIT, Type.STRING, Importance.MEDIUM, "Source file round unit.")
             .define(FILE_DATE_CONFIG, Type.STRING, Importance.MEDIUM, "Source filename date formater.")
             .define(FILE_PREFIX_CONFIG, Type.STRING, Importance.MEDIUM, "Source filename prefix.")
             .define(FILE_SUFFIX_CONFIG, Type.STRING, Importance.LOW, "Source filename suffix.")
@@ -46,7 +46,7 @@ public class FileStreamSource extends SourceConnector {
     private String filePrefix;
     private String fileSuffix;
     private String fileDateFormatter;
-    private String fileRoundUnit;
+//    private String fileRoundUnit;
     private String topic;
 
     @Override
@@ -67,7 +67,7 @@ public class FileStreamSource extends SourceConnector {
             startTime = LocalDateTime.now().withMinute(0).format(format);
         }
 
-        fileRoundUnit = props.get(FILE_ROUNDUNIT);
+//        fileRoundUnit = props.get(FILE_ROUNDUNIT);
 
         if (filename == null || filename.isEmpty()){
             filePrefix = props.get(FILE_PREFIX_CONFIG);
@@ -105,7 +105,7 @@ public class FileStreamSource extends SourceConnector {
         if (fileDateFormatter != null && !(fileDateFormatter.isEmpty()))
             config.put(FILE_DATE_CONFIG, fileDateFormatter);
 
-        config.put(FILE_ROUNDUNIT, fileRoundUnit);
+//        config.put(FILE_ROUNDUNIT, fileRoundUnit);
         config.put(START_TIME, startTime);
         config.put(FILE_CONFIG, filename);
         config.put(TOPIC_CONFIG, topic);
