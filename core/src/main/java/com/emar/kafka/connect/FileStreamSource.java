@@ -8,6 +8,7 @@ import org.apache.kafka.connect.connector.Task;
 import org.apache.kafka.connect.errors.ConnectException;
 import org.apache.kafka.connect.source.SourceConnector;
 
+import java.io.File;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -23,18 +24,18 @@ public class FileStreamSource extends SourceConnector {
 
     public static final String TOPIC_CONFIG = "topic";
     public static final String PATH_CONFIG = "path";
-    public static final String FILE_CONFIG = "file";
     public static final String FILE_PREFIX_CONFIG = "file.prefix";
     public static final String FILE_SUFFIX_CONFIG = "file.suffix";
-    public static final String FILE_DATE_CONFIG = "file.date";
+//    public static final String FILE_DATE_CONFIG = "file.date";
+    public static final String FILE_CONFIG = "file";
+    //    public static final String FILE_ROUNDUNIT = "file.roundUnit";
     public static final String START_TIME = "start.time";
-//    public static final String FILE_ROUNDUNIT = "file.roundUnit";
 
     private static final ConfigDef CONFIG_DEF = new ConfigDef()
             .define(PATH_CONFIG, Type.STRING, Importance.HIGH, "Source path.")
             .define(START_TIME, Type.STRING, Importance.LOW, "Source start time.")
 //            .define(FILE_ROUNDUNIT, Type.STRING, Importance.MEDIUM, "Source file round unit.")
-            .define(FILE_DATE_CONFIG, Type.STRING, Importance.MEDIUM, "Source filename date formater.")
+//            .define(FILE_DATE_CONFIG, Type.STRING, Importance.MEDIUM, "Source filename date formater.")
             .define(FILE_PREFIX_CONFIG, Type.STRING, Importance.MEDIUM, "Source filename prefix.")
             .define(FILE_SUFFIX_CONFIG, Type.STRING, Importance.LOW, "Source filename suffix.")
             .define(FILE_CONFIG, Type.STRING, Importance.HIGH, "Source filename.")
@@ -45,7 +46,7 @@ public class FileStreamSource extends SourceConnector {
     private String filename;
     private String filePrefix;
     private String fileSuffix;
-    private String fileDateFormatter;
+//    private String fileDateFormatter;
 //    private String fileRoundUnit;
     private String topic;
 
@@ -58,8 +59,8 @@ public class FileStreamSource extends SourceConnector {
     public void start(Map<String, String> props) {
         path = props.get(PATH_CONFIG);
         startTime = props.get(START_TIME);
-        filename = props.get(FILE_CONFIG);
-        fileDateFormatter = props.get(FILE_DATE_CONFIG);
+
+//        fileDateFormatter = props.get(FILE_DATE_CONFIG);
         DateTimeFormatter format = DateTimeFormatter.ofPattern(fileDateFormatter);
 
         if (startTime == null || startTime.isEmpty()){
@@ -72,7 +73,7 @@ public class FileStreamSource extends SourceConnector {
         if (filename == null || filename.isEmpty()){
             filePrefix = props.get(FILE_PREFIX_CONFIG);
             fileSuffix = props.get(FILE_SUFFIX_CONFIG);
-            filename = filePrefix + startTime + fileSuffix;
+            filename = path + File.separator + filePrefix + startTime + fileSuffix;
         }
 
         topic = props.get(TOPIC_CONFIG);

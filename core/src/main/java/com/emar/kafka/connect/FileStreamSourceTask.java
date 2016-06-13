@@ -25,6 +25,14 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.*;
+import java.nio.file.DirectoryStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.nio.file.attribute.BasicFileAttributes;
+import java.nio.file.attribute.FileTime;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
 
@@ -37,10 +45,11 @@ public class FileStreamSourceTask extends SourceTask {
 
     private String path;
 
-//    private String currentTime;
-    private String filePrefix;
     private String fileSuffix;
-//    private String fileRoundUnit;
+    private String filePrefix;
+    //    private String fileRoundUnit;
+
+    private String startTime;
     private DateTimeFormatter format;
     private String filename;
     private String fileRegex;
@@ -48,10 +57,10 @@ public class FileStreamSourceTask extends SourceTask {
     private InputStream stream;
     private BufferedReader reader = null;
     private char[] buffer = new char[1024];
-    private int offset = 0;
+    private int currentOffset = 0;
     private String topic = null;
 
-    private Long streamOffset;
+    private Map<String, Object> offset;
 
     private String partitionKey;
     private String partitionValue;
@@ -70,6 +79,7 @@ public class FileStreamSourceTask extends SourceTask {
 
         String fileDateFormat = props.get(FileStreamSource.FILE_DATE_CONFIG);
         format = DateTimeFormatter.ofPattern(fileDateFormat);
+        startTime = props.get(FileStreamSource.START_TIME);
 
         filename = props.get(FileStreamSource.FILE_CONFIG);
 
@@ -83,42 +93,65 @@ public class FileStreamSourceTask extends SourceTask {
 
     @Override
     public List<SourceRecord> poll() throws InterruptedException {
+        // 若新启动时 stream 为 null，需要做如下操作：
+        // 1. 查看当前 path 下的匹配的文件，及所采集的 position
+        // 2. 确认当前要采集的文件，及其相对于的 position，创建 stream
         if (stream == null) {
             try {
-                Map<String, Object> offset = context.offsetStorageReader().offset(offsetKey());
-                stream = new FileInputStream(filename);
-
+                offset = context.offsetStorageReader().offset(offsetKey());
                 if (offset != null) {
-                    Object lastRecordedOffset = offset.get(filename);
-                    if (lastRecordedOffset != null && !(lastRecordedOffset instanceof Long))
-                        throw new ConnectException("Offset position is the incorrect type");
-                    if (lastRecordedOffset != null) {
-                        log.debug("Found previous offset, trying to skip to file offset {}", lastRecordedOffset);
-                        long skipLeft = (Long) lastRecordedOffset;
-                        while (skipLeft > 0) {
-                            try {
-                                long skipped = stream.skip(skipLeft);
-                                skipLeft -= skipped;
-                            } catch (IOException e) {
-                                log.error("Error while trying to seek to previous offset in file: ", e);
-                                throw new ConnectException(e);
-                            }
-                        }
-                        log.debug("Skipped to offset {}", lastRecordedOffset);
-                    }
-                    streamOffset = (lastRecordedOffset != null) ? (Long) lastRecordedOffset : 0L;
+
+
                 } else {
-                    streamOffset = 0L;
+
+                    offset = initOffset();
                 }
-                reader = new BufferedReader(new InputStreamReader(stream));
-                log.debug("Opened {} for reading", logFilename());
-            } catch (FileNotFoundException e) {
+
+            } catch (IOException e) {
                 log.warn("Couldn't find file for FileStreamSourceTask, sleeping to wait for it to be created");
                 synchronized (this) {
-                    this.wait(1000);
+                    this.wait(3000);
                 }
                 return null;
             }
+
+
+
+//            try {
+//                Map<String, Object> offset = context.offsetStorageReader().offset(offsetKey());
+//                stream = new FileInputStream(filename);
+//
+//                if (offset != null) {
+//                    Object lastRecordedOffset = offset.get(filename);
+//                    if (lastRecordedOffset != null && !(lastRecordedOffset instanceof Long))
+//                        throw new ConnectException("Offset position is the incorrect type");
+//                    if (lastRecordedOffset != null) {
+//                        log.debug("Found previous offset, trying to skip to file offset {}", lastRecordedOffset);
+//                        long skipLeft = (Long) lastRecordedOffset;
+//                        while (skipLeft > 0) {
+//                            try {
+//                                long skipped = stream.skip(skipLeft);
+//                                skipLeft -= skipped;
+//                            } catch (IOException e) {
+//                                log.error("Error while trying to seek to previous offset in file: ", e);
+//                                throw new ConnectException(e);
+//                            }
+//                        }
+//                        log.debug("Skipped to offset {}", lastRecordedOffset);
+//                    }
+//                    streamOffset = (lastRecordedOffset != null) ? (Long) lastRecordedOffset : 0L;
+//                } else {
+//                    streamOffset = 0L;
+//                }
+//                reader = new BufferedReader(new InputStreamReader(stream));
+//                log.debug("Opened {} for reading", logFilename());
+//            } catch (FileNotFoundException e) {
+//                log.warn("Couldn't find file for FileStreamSourceTask, sleeping to wait for it to be created");
+//                synchronized (this) {
+//                    this.wait(1000);
+//                }
+//                return null;
+//            }
         }
 
         // Unfortunately we can't just use readLine() because it blocks in an uninterruptible way.
@@ -136,12 +169,12 @@ public class FileStreamSourceTask extends SourceTask {
 
             int nread = 0;
             while (readerCopy.ready()) {
-                nread = readerCopy.read(buffer, offset, buffer.length - offset);
+                nread = readerCopy.read(buffer, currentOffset, buffer.length - currentOffset);
                 log.trace("Read {} bytes from {}", nread, logFilename());
 
                 if (nread > 0) {
-                    offset += nread;
-                    if (offset == buffer.length) {
+                    currentOffset += nread;
+                    if (currentOffset == buffer.length) {
                         char[] newbuf = new char[buffer.length * 2];
                         System.arraycopy(buffer, 0, newbuf, 0, buffer.length);
                         buffer = newbuf;
@@ -176,14 +209,14 @@ public class FileStreamSourceTask extends SourceTask {
 
     private String extractLine() {
         int until = -1, newStart = -1;
-        for (int i = 0; i < offset; i++) {
+        for (int i = 0; i < currentOffset; i++) {
             if (buffer[i] == '\n') {
                 until = i;
                 newStart = i + 1;
                 break;
             } else if (buffer[i] == '\r') {
                 // We need to check for \r\n, so we must skip this if we can't check the next char
-                if (i + 1 >= offset)
+                if (i + 1 >= currentOffset)
                     return null;
 
                 until = i;
@@ -195,7 +228,7 @@ public class FileStreamSourceTask extends SourceTask {
         if (until != -1) {
             String result = new String(buffer, 0, until);
             System.arraycopy(buffer, newStart, buffer, 0, buffer.length - newStart);
-            offset = offset - newStart;
+            currentOffset = currentOffset - newStart;
             if (streamOffset != null)
                 streamOffset += newStart;
             return result;
@@ -225,9 +258,37 @@ public class FileStreamSourceTask extends SourceTask {
     }
 
     private Map<String, Long> offsetValue() {
-        Map<String, Long> offsetMap = new HashMap<>();
+        Map<String, Long> offsetValue = new HashMap<>();
         //TODO - 存储 offset
-        return offsetMap;
+        return offsetValue;
+    }
+
+    private Map<String, Object> initOffset() throws IOException{
+        Map<String, Object> offset = new HashMap<>();
+        DirectoryStream<Path> ds = Files.newDirectoryStream(Paths.get(path), fileRegex);
+        for (Path file : ds) {
+            String key = file.toString();
+            BasicFileAttributes attr = Files.readAttributes(file, BasicFileAttributes.class);
+            LocalDateTime creationTime = getLocalDateTime(attr.creationTime());
+            LocalDateTime lastModifyTime = getLocalDateTime(attr.lastModifiedTime());
+            if (creationTime.compareTo(getCurrentFileCreationTime()) >= 0) {
+                Map<String, Object> valueMap = new HashMap<>();
+                valueMap.put("position", 0L);
+                valueMap.put("creationTime", creationTime);
+                valueMap.put("lastModifyTime", lastModifyTime);
+                offset.put(key, valueMap);
+            }
+        }
+        ds.close();
+        return offset;
+    }
+
+    private LocalDateTime getLocalDateTime(FileTime time) {
+        return LocalDateTime.ofInstant(time.toInstant(), ZoneId.of("Asia/Shanghai"));
+    }
+
+    private LocalDateTime getCurrentFileCreationTime(){
+
     }
 
     private String logFilename() {

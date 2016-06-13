@@ -16,7 +16,7 @@ import java.util.concurrent.TimeUnit;
  */
 public class PathFilesTest {
     public static void main(String[] args) throws IOException {
-        Path path = Paths.get("E:/ideaProjects/moxingxing/thor/data");
+        Path path = Paths.get("D:/ideaProjects/moxingxing/thor/data");
 
         BasicFileAttributes attr = null;
 
@@ -26,8 +26,9 @@ public class PathFilesTest {
             e.printStackTrace();
         }
 
-        LocalDateTime time = LocalDateTime.ofInstant(attr.lastModifiedTime().toInstant(), ZoneId.of("Asia/Shanghai"));
+        System.out.println(attr.creationTime());
+        LocalDateTime time = LocalDateTime.ofInstant(attr.creationTime().toInstant(), ZoneId.of("Asia/Shanghai"));
         System.out.println(attr.lastAccessTime());
-        System.out.println(time);
+        System.out.println(time.compareTo(LocalDateTime.ofInstant(attr.lastAccessTime().toInstant(), ZoneId.of("Asia/Shanghai"))));
     }
 }
