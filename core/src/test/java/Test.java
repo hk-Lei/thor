@@ -5,6 +5,8 @@ import java.io.IOException;
 import java.nio.file.*;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.HashMap;
+import java.util.Map;
 
 /**
  * @Author moxingxing
@@ -37,6 +39,10 @@ public class Test {
 //            System.err.println(e);
 //        }
 
+
+        Map<String, String> map = new HashMap<>();
+
+        map.put("a", null);
 
         String path1 = "i_rtb_bidreq_10_30_20160613.dat";
         String path2 = "i_rtb_bidreq_9_30_20160613.dat";

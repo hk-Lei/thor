@@ -17,6 +17,9 @@
 
 package com.emar.kafka.connect;
 
+import com.emar.kafka.utils.DateUtils;
+import io.netty.buffer.ByteBuf;
+import org.apache.kafka.common.record.ByteBufferInputStream;
 import org.apache.kafka.connect.data.Schema;
 import org.apache.kafka.connect.errors.ConnectException;
 import org.apache.kafka.connect.source.SourceRecord;
@@ -25,10 +28,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.*;
-import java.nio.file.DirectoryStream;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
+import java.nio.ByteBuffer;
+import java.nio.channels.FileChannel;
+import java.nio.file.*;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.nio.file.attribute.FileTime;
 import java.time.LocalDateTime;
@@ -40,24 +42,35 @@ import java.util.*;
  * FileStreamSourceTask reads from stdin or a file.
  */
 public class FileStreamSourceTask extends SourceTask {
-    private static final Logger log = LoggerFactory.getLogger(org.apache.kafka.connect.file.FileStreamSourceTask.class);
+    private static final Logger LOG = LoggerFactory.getLogger(FileStreamSourceTask.class);
     private static final Schema VALUE_SCHEMA = Schema.STRING_SCHEMA;
+
+    private static final String FILE = "file";
+    private static final String POSITION = "position";
+    private static final String CREATION_TIME = "creation_time";
+    private static final String LAST_MODIFY_TIME = "last_modify_time";
+
+    private static final int _1M = 1024 * 1024;
+    private static final int _5M = 5 * _1M;
+    private static final int _10M = 10 * _1M;
 
     private String path;
 
     private String fileSuffix;
     private String filePrefix;
-    //    private String fileRoundUnit;
-
-    private String startTime;
-    private DateTimeFormatter format;
-    private String filename;
+    private boolean ignoreOffset;
+    private LocalDateTime start;
     private String fileRegex;
-//    private String nextfile;
+    private String filename;
+    private long position;
+    private long lineOffset;
+    private LocalDateTime creationTime;
+    private LocalDateTime lastModifyTime;
+    private FileChannel channel;
     private InputStream stream;
     private BufferedReader reader = null;
-    private char[] buffer = new char[1024];
-    private int currentOffset = 0;
+    private ByteBuffer buffer = null;
+    private ArrayList<SourceRecord> records;
     private String topic = null;
 
     private Map<String, Object> offset;
@@ -76,178 +89,117 @@ public class FileStreamSourceTask extends SourceTask {
         filePrefix = props.get(FileStreamSource.FILE_PREFIX_CONFIG);
         fileSuffix = props.get(FileStreamSource.FILE_SUFFIX_CONFIG);
         fileRegex = filePrefix + "*" + fileSuffix;
+        String startTime = props.get(FileStreamSource.START_TIME);
 
-        String fileDateFormat = props.get(FileStreamSource.FILE_DATE_CONFIG);
-        format = DateTimeFormatter.ofPattern(fileDateFormat);
-        startTime = props.get(FileStreamSource.START_TIME);
+        ignoreOffset = Boolean.parseBoolean(props.get(FileStreamSource.IGNORE_OFFSET));
+        if (ignoreOffset) {
+            LOG.warn("ignore.offset 为 true, 将忽略之前的 offset，以 start.time 为首要参考对象");
+            start = getStart(startTime);
+            initOffset();
+        } else {
+            LOG.warn("ignore.offset 为 false（默认为 false）, 将以之前的 offset 为首要参考对象");
+            offset = context.offsetStorageReader().offset(offsetKey());
+            if (offset == null) {
+                LOG.warn("Local offset is null! 以 start.time 为参考对象");
+                initOffset();
+            } else {
+                checkOffset();
+            }
+        }
 
-        filename = props.get(FileStreamSource.FILE_CONFIG);
+        Map<String, Object> offsetValue = (Map<String, Object>) offset.get("0");
+        filename = (String) offsetValue.get(FILE);
+        position = (long) offsetValue.get(POSITION);
+
+        try {
+            channel = FileChannel.open(Paths.get(path, filename), StandardOpenOption.READ);
+            channel.position(position);
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
 
         topic = props.get(FileStreamSource.TOPIC_CONFIG);
         if (topic == null)
             throw new ConnectException("FileStreamSourceTask config missing topic setting");
 
-        partitionKey = "fileType: " + path + File.separator + fileRegex;
+        partitionKey = "fileType: " + this.path + File.separator + fileRegex;
         partitionValue = "topic: " + topic;
     }
 
     @Override
     public List<SourceRecord> poll() throws InterruptedException {
-        // 若新启动时 stream 为 null，需要做如下操作：
-        // 1. 查看当前 path 下的匹配的文件，及所采集的 position
-        // 2. 确认当前要采集的文件，及其相对于的 position，创建 stream
-        if (stream == null) {
-            try {
-                offset = context.offsetStorageReader().offset(offsetKey());
-                if (offset != null) {
+        records = null;
+        ByteBuffer buffer = ByteBuffer.allocate(_5M);
 
-
-                } else {
-
-                    offset = initOffset();
-                }
-
-            } catch (IOException e) {
-                log.warn("Couldn't find file for FileStreamSourceTask, sleeping to wait for it to be created");
-                synchronized (this) {
-                    this.wait(3000);
-                }
-                return null;
-            }
-
-
-
-//            try {
-//                Map<String, Object> offset = context.offsetStorageReader().offset(offsetKey());
-//                stream = new FileInputStream(filename);
-//
-//                if (offset != null) {
-//                    Object lastRecordedOffset = offset.get(filename);
-//                    if (lastRecordedOffset != null && !(lastRecordedOffset instanceof Long))
-//                        throw new ConnectException("Offset position is the incorrect type");
-//                    if (lastRecordedOffset != null) {
-//                        log.debug("Found previous offset, trying to skip to file offset {}", lastRecordedOffset);
-//                        long skipLeft = (Long) lastRecordedOffset;
-//                        while (skipLeft > 0) {
-//                            try {
-//                                long skipped = stream.skip(skipLeft);
-//                                skipLeft -= skipped;
-//                            } catch (IOException e) {
-//                                log.error("Error while trying to seek to previous offset in file: ", e);
-//                                throw new ConnectException(e);
-//                            }
-//                        }
-//                        log.debug("Skipped to offset {}", lastRecordedOffset);
-//                    }
-//                    streamOffset = (lastRecordedOffset != null) ? (Long) lastRecordedOffset : 0L;
-//                } else {
-//                    streamOffset = 0L;
-//                }
-//                reader = new BufferedReader(new InputStreamReader(stream));
-//                log.debug("Opened {} for reading", logFilename());
-//            } catch (FileNotFoundException e) {
-//                log.warn("Couldn't find file for FileStreamSourceTask, sleeping to wait for it to be created");
-//                synchronized (this) {
-//                    this.wait(1000);
-//                }
-//                return null;
-//            }
-        }
-
-        // Unfortunately we can't just use readLine() because it blocks in an uninterruptible way.
-        // Instead we have to manage splitting lines ourselves, using simple backoff when no new data
-        // is available.
         try {
-            final BufferedReader readerCopy;
-            synchronized (this) {
-                readerCopy = reader;
+            int nread = channel.read(buffer);
+            LOG.trace("Read {} bytes from {}", nread, logFilename());
+            if (nread > 0) {
+                buffer.flip();
+                records = extractRecords();
+                lineOffset += nread;
+//                String line;
+//                do {
+//                    line = extractLine();
+//                    if (line != null) {
+//                        LOG.trace("Read a line from {}", logFilename());
+//                        if (records == null)
+//                            records = new ArrayList<>();
+//                        records.add(new SourceRecord(offsetKey(), offsetValue(), topic, VALUE_SCHEMA, line));
+//                    }
+//                    new ArrayList<SourceRecord>();
+//                } while (line != null);
             }
-            if (readerCopy == null)
-                return null;
-
-            ArrayList<SourceRecord> records = null;
-
-            int nread = 0;
-            while (readerCopy.ready()) {
-                nread = readerCopy.read(buffer, currentOffset, buffer.length - currentOffset);
-                log.trace("Read {} bytes from {}", nread, logFilename());
-
-                if (nread > 0) {
-                    currentOffset += nread;
-                    if (currentOffset == buffer.length) {
-                        char[] newbuf = new char[buffer.length * 2];
-                        System.arraycopy(buffer, 0, newbuf, 0, buffer.length);
-                        buffer = newbuf;
-                    }
-
-                    String line;
-                    do {
-                        line = extractLine();
-                        if (line != null) {
-                            log.trace("Read a line from {}", logFilename());
-                            if (records == null)
-                                records = new ArrayList<>();
-                            records.add(new SourceRecord(offsetKey(), offsetValue(), topic, VALUE_SCHEMA, line));
-                        }
-                        new ArrayList<SourceRecord>();
-                    } while (line != null);
-                }
-            }
-
-            if (nread <= 0)
-                synchronized (this) {
-                    this.wait(1000);
-                }
-
             return records;
         } catch (IOException e) {
-            // Underlying stream was killed, probably as a result of calling stop. Allow to return
-            // null, and driving thread will handle any shutdown if necessary.
+            e.printStackTrace();
         }
+
         return null;
     }
 
-    private String extractLine() {
-        int until = -1, newStart = -1;
-        for (int i = 0; i < currentOffset; i++) {
-            if (buffer[i] == '\n') {
-                until = i;
-                newStart = i + 1;
-                break;
-            } else if (buffer[i] == '\r') {
-                // We need to check for \r\n, so we must skip this if we can't check the next char
-                if (i + 1 >= currentOffset)
-                    return null;
-
-                until = i;
-                newStart = (buffer[i + 1] == '\n') ? i + 2 : i + 1;
-                break;
+    private ArrayList<SourceRecord> extractRecords() {
+        int limit = buffer.limit();
+        byte[] bytes = buffer.array();
+        int from, end = -1;
+        for (int i = 0; i < limit; i++) {
+            if (bytes[i] == '\n') {
+                from = end + 1;
+                end = i;
+                String line = new String(bytes, from, end - from);
+                LOG.trace("Read a line: {} from {}", line, logFilename());
+                if (records == null)
+                    records = new ArrayList<>();
+                records.add(new SourceRecord(offsetKey(), offsetValue(), topic, VALUE_SCHEMA, line));
             }
         }
+        buffer.compact();
 
-        if (until != -1) {
-            String result = new String(buffer, 0, until);
-            System.arraycopy(buffer, newStart, buffer, 0, buffer.length - newStart);
-            currentOffset = currentOffset - newStart;
-            if (streamOffset != null)
-                streamOffset += newStart;
-            return result;
-        } else {
-            return null;
-        }
+//
+//        if (until != -1) {
+//            String result = new String(buffer, 0, until);
+//            System.arraycopy(buffer, newStart, buffer, 0, buffer.length - newStart);
+//            lineOffset = lineOffset - newStart;
+//
+//            position += newStart;
+//            return result;
+//        } else {
+//            return null;
+//        }
+        return null;
     }
 
     @Override
     public void stop() {
-        log.trace("Stopping");
+        LOG.trace("Stopping");
         synchronized (this) {
             try {
-                if (stream != null && stream != System.in) {
-                    stream.close();
-                    log.trace("Closed input stream");
+                if (channel != null) {
+                    channel.close();
+                    LOG.trace("Closed FileChannel of FileStreamSourceTask stream.");
                 }
             } catch (IOException e) {
-                log.error("Failed to close FileStreamSourceTask stream: ", e);
+                LOG.error("Failed to close FileStreamSourceTask stream: ", e);
             }
             this.notify();
         }
@@ -257,58 +209,73 @@ public class FileStreamSourceTask extends SourceTask {
         return Collections.singletonMap(partitionKey, partitionValue);
     }
 
-    private Map<String, Long> offsetValue() {
-        Map<String, Long> offsetValue = new HashMap<>();
+    private Map<String, Object> offsetValue() {
         //TODO - 存储 offset
-        return offsetValue;
+        return offset;
     }
 
-    private Map<String, Object> initOffset() throws IOException{
-        Map<String, Object> offset = new HashMap<>();
-        DirectoryStream<Path> ds = Files.newDirectoryStream(Paths.get(path), fileRegex);
-        for (Path file : ds) {
-            String key = file.toString();
-            BasicFileAttributes attr = Files.readAttributes(file, BasicFileAttributes.class);
-            LocalDateTime creationTime = getLocalDateTime(attr.creationTime());
-            LocalDateTime lastModifyTime = getLocalDateTime(attr.lastModifiedTime());
-            if (creationTime.compareTo(getCurrentFileCreationTime()) >= 0) {
-                Map<String, Object> valueMap = new HashMap<>();
-                valueMap.put("position", 0L);
-                valueMap.put("creationTime", creationTime);
-                valueMap.put("lastModifyTime", lastModifyTime);
-                offset.put(key, valueMap);
+    private LocalDateTime getStart(String startTime){
+        DateTimeFormatter format = DateUtils.getFormatter(startTime);
+        if (startTime == null || startTime.isEmpty() || format == null){
+            LOG.warn("start.time 为空或者非法（格式必须为 yyyyMMddHHmm 或 yyyyMMddHH 或者 yyyyMMdd），将 start.time 设置为当前时间精确到分钟");
+            // 开始时间精确到小时
+            return LocalDateTime.now().withSecond(0);
+        } else
+            return LocalDateTime.parse(startTime, format);
+    }
+
+    /**
+     * TODO 需要对 offset 按 creationTime 排序，时间最小的 key 为 0
+     */
+    private void initOffset() {
+        do {
+            int i = 0;
+            try (DirectoryStream<Path> ds = Files.newDirectoryStream(Paths.get(path), fileRegex)) {
+                for (Path file : ds) {
+                    BasicFileAttributes attr = Files.readAttributes(file, BasicFileAttributes.class);
+                    LocalDateTime creationTime = getLocalDateTime(attr.creationTime());
+                    LocalDateTime lastModifyTime = getLocalDateTime(attr.lastModifiedTime());
+                    if (creationTime.compareTo(start) >= 0) {
+                        if (i == 0) {
+                            offset = new HashMap<>();
+                        }
+                        Map<String, Object> valueMap = new HashMap<>();
+                        valueMap.put(FILE, file.getFileName().toString());
+                        valueMap.put(POSITION, 0L);
+                        valueMap.put(CREATION_TIME, creationTime);
+                        valueMap.put(LAST_MODIFY_TIME, lastModifyTime);
+                        offset.put(i + "", valueMap);
+                        i++;
+                    }
+                }
+                ds.close();
+            } catch (IOException e) {
+                e.printStackTrace();
             }
-        }
-        ds.close();
-        return offset;
+
+            if (offset == null) {
+                LOG.warn("Couldn't find file for FileStreamSourceTask, sleeping to wait (2s) for it to be created");
+                try {
+                    synchronized (this) {
+                        this.wait(2000);
+                    }
+                } catch (InterruptedException e) {
+                    System.exit(1);
+                }
+            }
+        } while (offset != null);
+    }
+
+    //TODO 检查 offset 对象的 file 是否存在，删除已经不存在的 file 或者过期的 file
+    private void checkOffset(){
+
     }
 
     private LocalDateTime getLocalDateTime(FileTime time) {
         return LocalDateTime.ofInstant(time.toInstant(), ZoneId.of("Asia/Shanghai"));
     }
 
-    private LocalDateTime getCurrentFileCreationTime(){
-
-    }
-
     private String logFilename() {
         return filename;
     }
-
-//    private String getNextfile(){
-//        return filePrefix + getNextTime() + fileSuffix;
-//    }
-
-//    private String getNextTime(){
-//        switch (fileRoundUnit) {
-//            case "minute" :
-//                return LocalDateTime.parse(currentTime, format).plusMinutes(10).format(format);
-//            case "hour" :
-//                return LocalDateTime.parse(currentTime, format).plusHours(1).format(format);
-//            case "day" :
-//                return LocalDateTime.parse(currentTime, format).plusDays(1).format(format);
-//            default :
-//                return null;
-//        }
-//    }
 }
