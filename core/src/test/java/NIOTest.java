@@ -10,7 +10,7 @@ import java.nio.file.Paths;
  */
 public class NIOTest {
     public static void main(String[] args) {
-        Path path = Paths.get("E:/ideaProjects/moxingxing/thor/data");
+        Path path = Paths.get("D:/ideaProjects/moxingxing/thor/data");
 
 //        System.out.println(Files.exists(path));
 
