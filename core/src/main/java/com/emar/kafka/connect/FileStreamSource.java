@@ -7,8 +7,6 @@ import org.apache.kafka.common.utils.AppInfoParser;
 import org.apache.kafka.connect.connector.Task;
 import org.apache.kafka.connect.errors.ConnectException;
 import org.apache.kafka.connect.source.SourceConnector;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -20,8 +18,6 @@ import java.util.Map;
  * @Date 2016/6/2
  */
 public class FileStreamSource extends SourceConnector {
-
-    public static Logger LOG = LoggerFactory.getLogger(FileStreamSource.class);
 
     public static final String TOPIC_CONFIG = "topic";
     public static final String PATH_CONFIG = "path";
