@@ -25,11 +25,13 @@ public class FileStreamSource extends SourceConnector {
     public static final String FILE_SUFFIX_CONFIG = "file.suffix";
     public static final String START_TIME = "start.time";
     public static final String IGNORE_OFFSET = "ignore.offset";
+    public static final String INTERCEPTOR_SCHEME = "interceptor.scheme";
 
     private static final ConfigDef CONFIG_DEF = new ConfigDef()
             .define(PATH_CONFIG, Type.STRING, Importance.HIGH, "Source path.")
             .define(START_TIME, Type.STRING, Importance.LOW, "Source start time.")
-            .define(IGNORE_OFFSET, Type.BOOLEAN, Importance.LOW, "Source ignore offset.")
+            .define(IGNORE_OFFSET, Type.STRING, Importance.LOW, "Source ignore offset.")
+            .define(INTERCEPTOR_SCHEME, Type.STRING, Importance.LOW, "Source interceptor scheme.")
             .define(FILE_PREFIX_CONFIG, Type.STRING, Importance.HIGH, "Source filename prefix.")
             .define(FILE_SUFFIX_CONFIG, Type.STRING, Importance.HIGH, "Source filename suffix.")
             .define(TOPIC_CONFIG, Type.STRING, Importance.HIGH, "The topic to publish data to");
@@ -40,6 +42,7 @@ public class FileStreamSource extends SourceConnector {
     private String filePrefix;
     private String fileSuffix;
     private String topic;
+    private String scheme;
 
     @Override
     public String version() {
@@ -53,6 +56,7 @@ public class FileStreamSource extends SourceConnector {
         ignoreOffset = props.get(IGNORE_OFFSET);
         filePrefix = props.get(FILE_PREFIX_CONFIG);
         fileSuffix = props.get(FILE_SUFFIX_CONFIG);
+        scheme = props.get(INTERCEPTOR_SCHEME);
 
         topic = props.get(TOPIC_CONFIG);
         if ((filePrefix == null || filePrefix.isEmpty())&& (fileSuffix == null || fileSuffix.isEmpty()))
@@ -81,6 +85,7 @@ public class FileStreamSource extends SourceConnector {
         config.put(FILE_PREFIX_CONFIG, filePrefix);
         config.put(FILE_SUFFIX_CONFIG, fileSuffix);
         config.put(TOPIC_CONFIG, topic);
+        config.put(INTERCEPTOR_SCHEME, scheme);
         configs.add(config);
         return configs;
     }

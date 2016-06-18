@@ -10,38 +10,38 @@
     <!-- put deps in the lib folder -->
     <dependencySets>
         <dependencySet>
-            <useProjectArtifact>false</useProjectArtifact>
+            <useProjectArtifact>true</useProjectArtifact>
             <outputDirectory>lib</outputDirectory>
             <unpack>false</unpack>
         </dependencySet>
     </dependencySets>
 
     <fileSets>
-        <!--
-            $THOR_HOME/bin
-        -->
+        <!-- $THOR_HOME/bin -->
         <fileSet>
-            <directory>${project.basedir}/../../bin</directory>
+            <directory>${project.basedir}/bin</directory>
             <outputDirectory>bin</outputDirectory>
             <includes>
                 <include>*.sh</include>
             </includes>
             <fileMode>0755</fileMode>
         </fileSet>
+
+        <!-- $THOR_HOME/config -->
+        <fileSet>
+            <directory>${project.basedir}/config</directory>
+            <outputDirectory>config</outputDirectory>
+            <includes>
+                <include>*</include>
+            </includes>
+            <fileMode>0644</fileMode>
+        </fileSet>
+
     </fileSets>
 
     <files>
-        <!--
-            $THOR_HOME/conf
-        -->
         <file>
-            <source>${project.basedir}/../../conf/*</source>
-            <outputDirectory>/conf</outputDirectory>
-            <fileMode>0644</fileMode>
-        </file>
-        <!-- TODO this should be a generated file from "target" -->
-        <file>
-            <source>${project.basedir}/../../log4j2/*.xml</source>
+            <source>${project.basedir}/log4j2/worker.xml</source>
             <outputDirectory>/log4j2</outputDirectory>
             <fileMode>0644</fileMode>
         </file>
@@ -49,11 +49,13 @@
         <file>
             <source>${project.basedir}/LICENSE</source>
             <outputDirectory>/</outputDirectory>
+            <fileMode>0644</fileMode>
         </file>
 
         <file>
-            <source>${project.basedir}/../../README.md</source>
+            <source>${project.basedir}/README.md</source>
             <outputDirectory>/</outputDirectory>
+            <fileMode>0644</fileMode>
         </file>
     </files>
 </assembly>

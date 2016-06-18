@@ -17,6 +17,8 @@
 
 package com.emar.kafka.connect;
 
+import com.emar.kafka.interceptor.Scheme;
+import com.emar.kafka.utils.ConfigUtil;
 import com.emar.kafka.utils.DateUtils;
 import org.apache.kafka.connect.data.Schema;
 import org.apache.kafka.connect.errors.ConnectException;
@@ -63,6 +65,7 @@ public class FileStreamSourceTask extends SourceTask {
     private ByteBuffer buffer = null;
     private ArrayList<SourceRecord> records;
     private String topic = null;
+    private Scheme scheme = null;
 
     private Map<String, Object> offset;
 
@@ -81,6 +84,8 @@ public class FileStreamSourceTask extends SourceTask {
         fileSuffix = props.get(FileStreamSource.FILE_SUFFIX_CONFIG);
         fileRegex = filePrefix + "*" + fileSuffix;
         String startTime = props.get(FileStreamSource.START_TIME);
+        String schemeClass = props.get(FileStreamSource.INTERCEPTOR_SCHEME);
+        scheme = ConfigUtil.getInterceptorClass(schemeClass);
 
         ignoreOffset = Boolean.parseBoolean(props.get(FileStreamSource.IGNORE_OFFSET));
         if (ignoreOffset) {
@@ -162,7 +167,7 @@ public class FileStreamSourceTask extends SourceTask {
                 if (line.length() > 0) {
                     if (records == null)
                         records = new ArrayList<>();
-                    records.add(new SourceRecord(offsetKey(), offsetValue(), topic, VALUE_SCHEMA, line));
+                    records.add(new SourceRecord(offsetKey(), offsetValue(), topic, VALUE_SCHEMA, scheme.deserialize(line)));
                 }
             }
         }

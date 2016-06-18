@@ -6,12 +6,9 @@
 
     <groupId>com.emar.thor</groupId>
     <artifactId>thor</artifactId>
-    <packaging>pom</packaging>
+    <packaging>jar</packaging>
     <version>0.1-SNAPSHOT</version>
-
-    <modules>
-        <module>core</module>
-    </modules>
+    <name>Thor</name>
 
     <repositories>
         <repository>
@@ -38,21 +35,20 @@
 
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-
         <!-- dependency versions -->
+        <!--<kafka.artifact.id>kafka_2.11</kafka.artifact.id>-->
         <kafka.version>0.10.0.0</kafka.version>
-        <kafka.artifact.id>kafka_2.11</kafka.artifact.id>
-        <zookeeper.version>3.4.8</zookeeper.version>
-        <curator.version>3.1.0</curator.version>
-        <disruptor.version>3.3.4</disruptor.version>
-        <snakeyaml.version>1.17</snakeyaml.version>
-        <netty.version>4.1.1.Final</netty.version>
         <slf4j.version>1.7.18</slf4j.version>
         <log4j.version>2.5</log4j.version>
-        <guava.version>19.0</guava.version>
-        <clojure.version>1.8.0</clojure.version>
         <commonlang3.version>3.4</commonlang3.version>
         <junit.version>4.11</junit.version>
+        <!--<zookeeper.version>3.4.8</zookeeper.version>-->
+        <!--<curator.version>3.1.0</curator.version>-->
+        <!--<disruptor.version>3.3.4</disruptor.version>-->
+        <!--<snakeyaml.version>1.17</snakeyaml.version>-->
+        <!--<netty.version>4.1.1.Final</netty.version>-->
+        <!--<guava.version>19.0</guava.version>-->
+        <!--<clojure.version>1.8.0</clojure.version>-->
     </properties>
 
     <dependencies>
@@ -83,6 +79,28 @@
             <version>${slf4j.version}</version>
         </dependency>
 
+        <dependency>
+            <groupId>org.apache.kafka</groupId>
+            <artifactId>connect-file</artifactId>
+            <version>${kafka.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.kafka</groupId>
+            <artifactId>connect-json</artifactId>
+            <version>${kafka.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.kafka</groupId>
+            <artifactId>connect-runtime</artifactId>
+            <version>${kafka.version}</version>
+        </dependency>
+
+        <dependency>
+            <groupId>org.apache.commons</groupId>
+            <artifactId>commons-lang3</artifactId>
+            <version>${commonlang3.version}</version>
+        </dependency>
+
         <!-- Test -->
         <dependency>
             <groupId>junit</groupId>
@@ -92,67 +110,6 @@
         </dependency>
     </dependencies>
 
-    <profiles>
-        <profile>
-            <id>dist</id>
-            <modules>
-                <module>dist/binary</module>
-                <module>dist/source</module>
-            </modules>
-            <build>
-                <plugins>
-                    <plugin>
-                        <groupId>org.apache.maven.plugins</groupId>
-                        <artifactId>maven-source-plugin</artifactId>
-                        <executions>
-                            <execution>
-                                <id>attach-sources</id>
-                                <goals>
-                                    <goal>jar</goal>
-                                </goals>
-                            </execution>
-                        </executions>
-                    </plugin>
-                    <plugin>
-                        <groupId>org.apache.maven.plugins</groupId>
-                        <artifactId>maven-javadoc-plugin</artifactId>
-                        <configuration>
-                            <outputDirectory>${project.build.directory}/javadoc</outputDirectory>
-                            <reportOutputDirectory>./docs/javadoc</reportOutputDirectory>
-                        </configuration>
-                        <executions>
-                            <execution>
-                                <id>attach-javadocs</id>
-                                <goals>
-                                    <goal>jar</goal>
-                                </goals>
-                            </execution>
-                            <execution>
-                                <id>aggregate</id>
-                                <goals>
-                                    <goal>aggregate</goal>
-                                </goals>
-                                <phase>site</phase>
-                            </execution>
-                        </executions>
-                    </plugin>
-                    <plugin>
-                        <groupId>org.apache.maven.plugins</groupId>
-                        <artifactId>maven-jar-plugin</artifactId>
-                        <configuration>
-                            <archive>
-                                <manifest>
-                                    <addDefaultImplementationEntries>true</addDefaultImplementationEntries>
-                                    <addDefaultSpecificationEntries>true</addDefaultSpecificationEntries>
-                                </manifest>
-                            </archive>
-                        </configuration>
-                    </plugin>
-                </plugins>
-            </build>
-        </profile>
-    </profiles>
-
     <build>
         <plugins>
             <plugin>
@@ -161,6 +118,26 @@
                 <configuration>
                     <source>1.8</source>
                     <target>1.8</target>
+                </configuration>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-assembly-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>single</goal>
+                        </goals>
+                    </execution>
+                </executions>
+                <configuration>
+                    <attach>true</attach>
+                    <runOnlyAtExecutionRoot>true</runOnlyAtExecutionRoot>
+                    <descriptors>
+                        <descriptor>${project.basedir}/assembly/binary.xml</descriptor>
+                    </descriptors>
+                    <appendAssemblyId>false</appendAssemblyId>
                 </configuration>
             </plugin>
         </plugins>
