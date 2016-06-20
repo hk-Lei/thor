@@ -17,11 +17,13 @@
 
 package com.emar.kafka.connect;
 
+import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONObject;
 import com.emar.kafka.interceptor.Scheme;
 import com.emar.kafka.offset.OffsetValue;
 import com.emar.kafka.utils.ConfigUtil;
 import com.emar.kafka.utils.DateUtils;
+import com.emar.kafka.utils.StringUtils;
 import org.apache.kafka.connect.data.Schema;
 import org.apache.kafka.connect.errors.ConnectException;
 import org.apache.kafka.connect.source.SourceRecord;
@@ -44,11 +46,13 @@ import java.util.*;
 public class FileStreamSourceTask extends SourceTask {
     private static final Logger LOG = LoggerFactory.getLogger(FileStreamSourceTask.class);
     private static final Schema VALUE_SCHEMA = Schema.STRING_SCHEMA;
+    private static final String CURRENT = "current";
+    private static final String FILES = "files";
 
     private static final int _1M = 1024 * 1024;
     private static final int _5M = 5 * _1M;
     private static final int _10M = 10 * _1M;
-    private static ByteBuffer buffer = null;
+    private ByteBuffer buffer = null;
 
     private String path;
     private String fileSuffix;
@@ -65,11 +69,13 @@ public class FileStreamSourceTask extends SourceTask {
     private Scheme scheme = null;
 
     private Map<String, OffsetValue> offset;
+    private JSONObject files;
 
     private String partitionKey;
     private String partitionValue;
 
-    private long logOffsets = System.currentTimeMillis() / 1000;
+    private long logOffsetTime = System.currentTimeMillis();
+    private long checkFilesTime = System.currentTimeMillis();
 
     @Override
     public String version() {
@@ -106,7 +112,7 @@ public class FileStreamSourceTask extends SourceTask {
                 LOG.warn("Local stored offset is null! 以 start.time 为参考对象");
                 initOffset();
             } else {
-                storeOffsets2Offsets(storeOffset);
+                storeOffset2Offset(storeOffset);
                 checkOffset(true);
             }
         }
@@ -133,6 +139,8 @@ public class FileStreamSourceTask extends SourceTask {
             } else {
                 checkOffset(false);
                 lastModifyTime = DateUtils.getFileLastModifyTime(path, filename);
+                logOffset();
+                checkFiles();
             }
             return records;
         } catch (IOException e) {
@@ -201,7 +209,13 @@ public class FileStreamSourceTask extends SourceTask {
         offsetValue.setFile(filename);
         offsetValue.setPosition(position);
         offsetValue.setLastModifyTime(DateUtils.getOffsetLastModifyTime(lastModifyTime));
-        return Collections.singletonMap("0", offsetValue.toString());
+        Map<String, String> offsetMap = new HashMap<>();
+        offsetMap.put(CURRENT, JSON.toJSONString(offsetValue));
+        if (files == null)
+            files = new JSONObject();
+        files.put(filename, position);
+        offsetMap.put(FILES, JSON.toJSONString(files));
+        return offsetMap;
     }
 
     private void initOffset() {
@@ -242,7 +256,7 @@ public class FileStreamSourceTask extends SourceTask {
                         BasicFileAttributes attr = Files.readAttributes(Paths.get(path, filename), BasicFileAttributes.class);
                         long fileSize = attr.size();
                         long position = offsetValue.getPosition();
-                        if (position <= fileSize){
+                        if (position <= fileSize) {
                             offset.put(j + "", offsetValue);
                         }
                     }
@@ -288,24 +302,25 @@ public class FileStreamSourceTask extends SourceTask {
                     checkAndAddNewFileToOffset();
                 }
             }
-
-            if (System.currentTimeMillis() / 1000 - logOffsets >= 30) {
-                LOG.info("current offset: {}", offset);
-                logOffsets = System.currentTimeMillis();
-            }
         }
     }
 
-    private void storeOffsets2Offsets(Map<String, Object> storeOffsets){
-        for (String key : storeOffsets.keySet()) {
-            if (offset == null)
+    private void storeOffset2Offset(Map<String, Object> storeOffset) {
+        String current = (String) storeOffset.get(CURRENT);
+        if (StringUtils.isNotBlank(current)) {
+            if (offset == null) {
                 offset = new HashMap<>();
-            String offsetValue = (String) storeOffsets.get(key);
-            offset.put(key, JSONObject.parseObject(offsetValue, OffsetValue.class));
+            }
+            offset.put("0", JSONObject.parseObject(current, OffsetValue.class));
+        }
+
+        String offsets = (String) storeOffset.get(FILES);
+        if (StringUtils.isNotBlank(current)) {
+            files = JSONObject.parseObject(offsets);
         }
     }
 
-    private void popOffset(){
+    private void popOffset() {
         Map<String, OffsetValue> tempOffset = offset;
         offset = new HashMap<>();
         OffsetValue offsetValue;
@@ -315,12 +330,12 @@ public class FileStreamSourceTask extends SourceTask {
         }
     }
 
-    private void removeOffset(int key){
+    private void removeOffset(int key) {
         Map<String, OffsetValue> tempOffset = offset;
         offset = new HashMap<>();
         OffsetValue offsetValue;
         for (int i = 0; i < key; i++) {
-            offsetValue =  tempOffset.get(i + "");
+            offsetValue = tempOffset.get(i + "");
             offset.put(i + "", offsetValue);
         }
 
@@ -330,7 +345,7 @@ public class FileStreamSourceTask extends SourceTask {
         }
     }
 
-    private boolean checkNextIsReady(){
+    private boolean checkNextIsReady() {
         String next = 1 + "";
         if (offset.containsKey(next)) {
             OffsetValue offsetValue = offset.get(next);
@@ -361,7 +376,7 @@ public class FileStreamSourceTask extends SourceTask {
         }
     }
 
-    private void checkAndAddNewFileToOffset(){
+    private void checkAndAddNewFileToOffset() {
         OffsetValue currentOffsetValue = offset.get("0");
         OffsetValue[] offsets = getOffsets(DateUtils.getOffsetLastModifyTime(currentOffsetValue));
         if (offsets != null) {
@@ -371,17 +386,18 @@ public class FileStreamSourceTask extends SourceTask {
         }
     }
 
-    private OffsetValue[] getOffsets(LocalDateTime start){
+    private OffsetValue[] getOffsets(LocalDateTime start) {
         ArrayList<OffsetValue> offsetList = null;
         try (DirectoryStream<Path> ds = Files.newDirectoryStream(Paths.get(path), fileRegex)) {
             for (Path file : ds) {
+                String fileName = file.getFileName().toString();
                 LocalDateTime lastModifyTime = DateUtils.getFileLastModifyTime(file);
                 if (lastModifyTime == null)
                     continue;
 
                 if (lastModifyTime.compareTo(start) >= 0) {
-                    OffsetValue value = new OffsetValue(file.getFileName().toString(), 0L, lastModifyTime);
-                    if (offsetList == null){
+                    OffsetValue value = new OffsetValue(fileName, files.getLongValue(fileName), lastModifyTime);
+                    if (offsetList == null) {
                         offsetList = new ArrayList<>();
                     }
                     offsetList.add(value);
@@ -423,11 +439,46 @@ public class FileStreamSourceTask extends SourceTask {
         this.position = position;
     }
 
+    private void removeOlderFromFiles() {
+        if (files == null || files.size() <= 1) {
+            return;
+        }
+
+        JSONObject temp = files;
+        files = new JSONObject();
+        for (String file : temp.keySet()) {
+            if (!file.equals(filename)) {
+                LocalDateTime fileLastModifyTime = DateUtils.getFileLastModifyTime(path, file);
+                if (fileLastModifyTime == null || LocalDateTime.now().minusMinutes(1).compareTo(fileLastModifyTime) > 0) {
+                    LOG.info("remove file: {fileName:{}, position:{}} from files:{}", file, temp.get(file), temp);
+                    continue;
+                }
+            }
+            files.put(file, temp.get(file));
+        }
+    }
+
+
     private String logFilename() {
         return filename;
     }
 
+    private void logOffset() {
+        if (System.currentTimeMillis() - logOffsetTime > 5 * 1000) {
+            LOG.info("current offset: {}", offset);
+            logOffsetTime = System.currentTimeMillis();
+        }
+    }
+
+    private void checkFiles() {
+        if (System.currentTimeMillis() - checkFilesTime > 60 * 1000) {
+//            LOG.info("current offset: {}", offset);
+            removeOlderFromFiles();
+            checkFilesTime = System.currentTimeMillis();
+        }
+    }
+
     private int compareTo(OffsetValue o1, OffsetValue o2) {
-        return ( o1.getLastModifyTime()).compareTo( o2.getLastModifyTime());
+        return (o1.getLastModifyTime()).compareTo(o2.getLastModifyTime());
     }
 }

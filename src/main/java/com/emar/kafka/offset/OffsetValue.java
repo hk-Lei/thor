@@ -2,14 +2,13 @@ package com.emar.kafka.offset;
 
 import com.emar.kafka.utils.DateUtils;
 
-import java.io.Serializable;
 import java.time.LocalDateTime;
 
 /**
  * @Author moxingxing
  * @Date 2016/6/20
  */
-public class OffsetValue implements Serializable{
+public class OffsetValue {
     private String file;
     private long position;
     private String lastModifyTime;

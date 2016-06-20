@@ -1,5 +1,6 @@
 package com.emar.kafka.connect;
 
+import com.emar.kafka.utils.StringUtils;
 import org.apache.kafka.common.config.ConfigDef;
 import org.apache.kafka.common.config.ConfigDef.Importance;
 import org.apache.kafka.common.config.ConfigDef.Type;
@@ -59,11 +60,11 @@ public class FileStreamSource extends SourceConnector {
         scheme = props.get(INTERCEPTOR_SCHEME);
 
         topic = props.get(TOPIC_CONFIG);
-        if ((filePrefix == null || filePrefix.isEmpty())&& (fileSuffix == null || fileSuffix.isEmpty()))
+        if (StringUtils.checkBothIsBlank(filePrefix, fileSuffix))
             throw new ConnectException("FileStreamSource configuration must include 'file.prefix or file.suffix or both' setting");
-        if (path == null || path.isEmpty())
+        if (StringUtils.isBlank(path))
             throw new ConnectException("FileStreamSource configuration must include 'path' setting");
-        if (topic == null || topic.isEmpty())
+        if (StringUtils.isBlank(topic))
             throw new ConnectException("FileStreamSource configuration must include 'topic' setting");
         if (topic.contains(","))
             throw new ConnectException("FileStreamSource should only have a single topic when used as a source.");
