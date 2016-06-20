@@ -15,6 +15,9 @@ public class ConfigUtil {
 
     @SuppressWarnings("unchecked")
     public static Scheme getInterceptorClass(String interceptorAlias) {
+        if (interceptorAlias == null || interceptorAlias.isEmpty()) {
+            return getDefaultInterceptorScheme();
+        }
         try {
             Class<?> clazz = Class.forName(interceptorAlias);
             if (!Scheme.class.isAssignableFrom(clazz)) {

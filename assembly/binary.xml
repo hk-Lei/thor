@@ -41,12 +41,6 @@
 
     <files>
         <file>
-            <source>${project.basedir}/log4j2/worker.xml</source>
-            <outputDirectory>/log4j2</outputDirectory>
-            <fileMode>0644</fileMode>
-        </file>
-
-        <file>
             <source>${project.basedir}/LICENSE</source>
             <outputDirectory>/</outputDirectory>
             <fileMode>0644</fileMode>

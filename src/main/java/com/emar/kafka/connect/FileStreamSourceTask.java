@@ -17,7 +17,9 @@
 
 package com.emar.kafka.connect;
 
+import com.alibaba.fastjson.JSONObject;
 import com.emar.kafka.interceptor.Scheme;
+import com.emar.kafka.offset.OffsetValue;
 import com.emar.kafka.utils.ConfigUtil;
 import com.emar.kafka.utils.DateUtils;
 import org.apache.kafka.connect.data.Schema;
@@ -34,7 +36,6 @@ import java.nio.channels.FileChannel;
 import java.nio.file.*;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
 import java.util.*;
 
 /**
@@ -44,33 +45,31 @@ public class FileStreamSourceTask extends SourceTask {
     private static final Logger LOG = LoggerFactory.getLogger(FileStreamSourceTask.class);
     private static final Schema VALUE_SCHEMA = Schema.STRING_SCHEMA;
 
-    private static final String FILE = "file";
-    private static final String POSITION = "position";
-    private static final String CREATION_TIME = "creation_time";
-
     private static final int _1M = 1024 * 1024;
     private static final int _5M = 5 * _1M;
     private static final int _10M = 10 * _1M;
+    private static ByteBuffer buffer = null;
 
     private String path;
-
     private String fileSuffix;
     private String filePrefix;
     private boolean ignoreOffset;
     private LocalDateTime start;
+    private LocalDateTime lastModifyTime;
     private String fileRegex;
     private String filename;
     private long position;
     private FileChannel channel;
-    private ByteBuffer buffer = null;
     private ArrayList<SourceRecord> records;
     private String topic = null;
     private Scheme scheme = null;
 
-    private Map<String, Object> offset;
+    private Map<String, OffsetValue> offset;
 
     private String partitionKey;
     private String partitionValue;
+
+    private long logOffsets = System.currentTimeMillis() / 1000;
 
     @Override
     public String version() {
@@ -83,22 +82,31 @@ public class FileStreamSourceTask extends SourceTask {
         filePrefix = props.get(FileStreamSource.FILE_PREFIX_CONFIG);
         fileSuffix = props.get(FileStreamSource.FILE_SUFFIX_CONFIG);
         fileRegex = filePrefix + "*" + fileSuffix;
+
+        topic = props.get(FileStreamSource.TOPIC_CONFIG);
+        if (topic == null) {
+            throw new ConnectException("FileStreamSourceTask config missing topic setting");
+        }
+        partitionKey = "fileType: " + this.path + File.separator + fileRegex;
+        partitionValue = "topic: " + topic;
+
         String startTime = props.get(FileStreamSource.START_TIME);
+        start = DateUtils.getStart(startTime);
         String schemeClass = props.get(FileStreamSource.INTERCEPTOR_SCHEME);
         scheme = ConfigUtil.getInterceptorClass(schemeClass);
 
         ignoreOffset = Boolean.parseBoolean(props.get(FileStreamSource.IGNORE_OFFSET));
         if (ignoreOffset) {
             LOG.warn("ignore.offset 为 true, 将忽略之前的 offset，以 start.time 为首要参考对象");
-            start = getStart(startTime);
             initOffset();
         } else {
             LOG.warn("ignore.offset 为 false（默认为 false）, 将以之前的 offset 为首要参考对象");
-            offset = context.offsetStorageReader().offset(offsetKey());
-            if (offset == null) {
-                LOG.warn("Local offset is null! 以 start.time 为参考对象");
+            Map<String, Object> storeOffset = context.offsetStorageReader().offset(offsetKey());
+            if (storeOffset == null) {
+                LOG.warn("Local stored offset is null! 以 start.time 为参考对象");
                 initOffset();
             } else {
+                storeOffsets2Offsets(storeOffset);
                 checkOffset(true);
             }
         }
@@ -111,14 +119,7 @@ public class FileStreamSourceTask extends SourceTask {
             System.exit(1);
         }
 
-        buffer = ByteBuffer.allocateDirect(_5M);
-
-        topic = props.get(FileStreamSource.TOPIC_CONFIG);
-        if (topic == null)
-            throw new ConnectException("FileStreamSourceTask config missing topic setting");
-
-        partitionKey = "fileType: " + this.path + File.separator + fileRegex;
-        partitionValue = "topic: " + topic;
+        buffer = ByteBuffer.allocate(_5M);
     }
 
     @Override
@@ -126,12 +127,12 @@ public class FileStreamSourceTask extends SourceTask {
         records = null;
         try {
             int nread = channel.read(buffer);
-            LOG.trace("Read {} bytes from {}", nread, logFilename());
             if (nread > 0) {
                 buffer.flip();
                 extractRecords();
             } else {
                 checkOffset(false);
+                lastModifyTime = DateUtils.getFileLastModifyTime(path, filename);
             }
             return records;
         } catch (IOException e) {
@@ -194,34 +195,19 @@ public class FileStreamSourceTask extends SourceTask {
         return Collections.singletonMap(partitionKey, partitionValue);
     }
 
-    private Map<String, Object> offsetValue() {
+    private Map<String, String> offsetValue() {
         //TODO - 存储 offset
-        Map<String, Object> offsetValue = (Map<String, Object>) offset.get("0");
-        offsetValue.put(FILE, filename);
-        offsetValue.put(POSITION, position);
-        return offset;
-    }
-
-    private LocalDateTime getStart(String startTime) {
-        DateTimeFormatter format = DateUtils.getFormatter(startTime);
-        if (startTime == null || startTime.isEmpty() || format == null) {
-            LOG.warn("start.time 为空或者非法（格式必须为 yyyyMMddHHmm 或 yyyyMMddHH 或者 yyyyMMdd），将 start.time 设置为当前时间精确到分钟");
-            // 开始时间精确到小时
-            return LocalDateTime.now().withSecond(0);
-        } else
-            return LocalDateTime.parse(startTime, format);
+        OffsetValue offsetValue = offset.get("0");
+        offsetValue.setFile(filename);
+        offsetValue.setPosition(position);
+        offsetValue.setLastModifyTime(DateUtils.getOffsetLastModifyTime(lastModifyTime));
+        return Collections.singletonMap("0", offsetValue.toString());
     }
 
     private void initOffset() {
         do {
-            Map<String, Object>[] offsets = getOffsets(start);
-            for (int i = 0; i < offsets.length; i++) {
-                if (offset == null) {
-                    offset = new HashMap<>();
-                }
-                offset.put(i + "", offsets[i]);
-            }
-            if (offset == null) {
+            OffsetValue[] offsets = getOffsets(start);
+            if (offsets == null || offsets.length == 0) {
                 LOG.warn("Couldn't find file for FileStreamSourceTask, sleeping to wait (2s) for it to be created");
                 try {
                     synchronized (this) {
@@ -230,24 +216,32 @@ public class FileStreamSourceTask extends SourceTask {
                 } catch (InterruptedException e) {
                     System.exit(1);
                 }
+                continue;
             }
+            for (int i = 0; i < offsets.length; i++) {
+                if (offset == null) {
+                    offset = new HashMap<>();
+                }
+                offset.put(i + "", offsets[i]);
+            }
+            LOG.info("current offset:{}", offset);
         } while (offset == null);
     }
 
     private void checkOffset(boolean setup) {
         if (setup) {
             int size = offset.size();
-            Map<String, Object> tempOffset = offset;
+            Map<String, OffsetValue> tempOffset = offset;
             offset = new HashMap<>();
             try {
                 int j = 0;
                 for (int i = 0; i < size; i++) {
-                    Map<String, Object> offsetValue = (Map<String, Object>) tempOffset.get(i + "");
-                    filename = (String) offsetValue.get(FILE);
+                    OffsetValue offsetValue = tempOffset.get(i + "");
+                    String filename = offsetValue.getFile();
                     if (Files.exists(Paths.get(path, filename))) {
                         BasicFileAttributes attr = Files.readAttributes(Paths.get(path, filename), BasicFileAttributes.class);
                         long fileSize = attr.size();
-                        position = (long) offsetValue.get(POSITION);
+                        long position = offsetValue.getPosition();
                         if (position <= fileSize){
                             offset.put(j + "", offsetValue);
                         }
@@ -277,7 +271,7 @@ public class FileStreamSourceTask extends SourceTask {
                     e.printStackTrace();
                     removeOffset(1);
                 }
-            } else if (offset.size() == 2) {
+            } else if (offset.size() <= 2) {
                 if (checkNextIsReady()) {
                     // 关闭当前流, 删除 offset 中过期的 file， 开启下一个文件的采集流
                     try {
@@ -290,119 +284,137 @@ public class FileStreamSourceTask extends SourceTask {
                         e.printStackTrace();
                         removeOffset(1);
                     }
+                } else {
+                    checkAndAddNewFileToOffset();
                 }
-            } else if (offset.size() == 1) {
-                checkAndAddNewFileToOffset();
+            }
+
+            if (System.currentTimeMillis() / 1000 - logOffsets >= 30) {
+                LOG.info("current offset: {}", offset);
+                logOffsets = System.currentTimeMillis();
             }
         }
     }
 
+    private void storeOffsets2Offsets(Map<String, Object> storeOffsets){
+        for (String key : storeOffsets.keySet()) {
+            if (offset == null)
+                offset = new HashMap<>();
+            String offsetValue = (String) storeOffsets.get(key);
+            offset.put(key, JSONObject.parseObject(offsetValue, OffsetValue.class));
+        }
+    }
+
     private void popOffset(){
-        Map<String, Object> tempOffset = offset;
+        Map<String, OffsetValue> tempOffset = offset;
         offset = new HashMap<>();
-        Map<String, Object> offsetValue;
-        for (int i = 1; i < offset.size(); i++) {
-            offsetValue = (Map<String, Object>) tempOffset.get(i + "");
+        OffsetValue offsetValue;
+        for (int i = 1; i < tempOffset.size(); i++) {
+            offsetValue = tempOffset.get(i + "");
             offset.put(i - 1 + "", offsetValue);
         }
     }
 
     private void removeOffset(int key){
-        Map<String, Object> tempOffset = offset;
+        Map<String, OffsetValue> tempOffset = offset;
         offset = new HashMap<>();
-        Map<String, Object> offsetValue;
+        OffsetValue offsetValue;
         for (int i = 0; i < key; i++) {
-            offsetValue = (Map<String, Object>) tempOffset.get(i + "");
+            offsetValue =  tempOffset.get(i + "");
             offset.put(i + "", offsetValue);
         }
 
         for (int i = key + 1; i < tempOffset.size(); i++) {
-            offsetValue = (Map<String, Object>) tempOffset.get(i + "");
+            offsetValue = tempOffset.get(i + "");
             offset.put(i - 1 + "", offsetValue);
         }
     }
 
     private boolean checkNextIsReady(){
         String next = 1 + "";
-        Map<String, Object> offsetValue = (Map<String, Object>) offset.get(next);
-        String nextFile = (String) offsetValue.get(FILE);
+        if (offset.containsKey(next)) {
+            OffsetValue offsetValue = offset.get(next);
+            String nextFile = offsetValue.getFile();
 
-        if (Files.exists(Paths.get(path, nextFile))){
-            try {
-                BasicFileAttributes attr = Files.readAttributes(Paths.get(path, nextFile),
-                        BasicFileAttributes.class);
-                long fileSize = attr.size();
-                if (fileSize > 0) {
-                    return true;
-                } else {
+            if (Files.exists(Paths.get(path, nextFile))) {
+                try {
+                    BasicFileAttributes attr = Files.readAttributes(Paths.get(path, nextFile),
+                            BasicFileAttributes.class);
+                    long fileSize = attr.size();
+                    return fileSize > 0;
+                } catch (IOException e) {
+                    LOG.error("Couldn't readAttributes from File:{} for FileStreamSourceTask!",
+                            path + File.separator + nextFile);
+                    e.printStackTrace();
+                    removeOffset(1);
                     return false;
                 }
-            } catch (IOException e) {
-                LOG.error("Couldn't readAttributes from File:{} for FileStreamSourceTask!",
+
+            } else {
+                LOG.error("Couldn't find File:{} for FileStreamSourceTask!",
                         path + File.separator + nextFile);
-                e.printStackTrace();
                 removeOffset(1);
                 return false;
             }
-
         } else {
-            LOG.error("Couldn't find File:{} for FileStreamSourceTask!",
-                    path + File.separator + nextFile);
-            removeOffset(1);
             return false;
         }
     }
 
     private void checkAndAddNewFileToOffset(){
-        Map<String, Object> currentOffsetValue = (Map<String, Object>) offset.get(0+"");
-        LocalDateTime currentCreationTime = (LocalDateTime) currentOffsetValue.get(CREATION_TIME);
-        Map<String, Object>[] offsets = getOffsets(currentCreationTime);
-        for (int i = 1; i < offsets.length; i++) {
-            offset.put(i + "", offsets[i]);
+        OffsetValue currentOffsetValue = offset.get("0");
+        OffsetValue[] offsets = getOffsets(DateUtils.getOffsetLastModifyTime(currentOffsetValue));
+        if (offsets != null) {
+            for (int i = 1; i < offsets.length; i++) {
+                offset.put(i + "", offsets[i]);
+            }
         }
     }
 
-    private Map<String, Object>[] getOffsets(LocalDateTime start){
-        ArrayList<Map<String, Object>> offsetList = null;
+    private OffsetValue[] getOffsets(LocalDateTime start){
+        ArrayList<OffsetValue> offsetList = null;
         try (DirectoryStream<Path> ds = Files.newDirectoryStream(Paths.get(path), fileRegex)) {
             for (Path file : ds) {
-                BasicFileAttributes attr = Files.readAttributes(file, BasicFileAttributes.class);
-                LocalDateTime creationTime = DateUtils.getLocalDateTime(attr.creationTime().toInstant());
-                if (creationTime.compareTo(start) >= 0) {
-                    Map<String, Object> valueMap = new HashMap<>();
-                    valueMap.put(FILE, file.getFileName().toString());
-                    valueMap.put(POSITION, 0L);
-                    valueMap.put(CREATION_TIME, creationTime);
+                LocalDateTime lastModifyTime = DateUtils.getFileLastModifyTime(file);
+                if (lastModifyTime == null)
+                    continue;
+
+                if (lastModifyTime.compareTo(start) >= 0) {
+                    OffsetValue value = new OffsetValue(file.getFileName().toString(), 0L, lastModifyTime);
                     if (offsetList == null){
                         offsetList = new ArrayList<>();
                     }
-                    offsetList.add(valueMap);
+                    offsetList.add(value);
                 }
             }
             ds.close();
         } catch (IOException e) {
             e.printStackTrace();
         }
-        Map<String, Object>[] offsets = new Map[offsetList.size()];
-        offsetList.toArray(offsets);
+        OffsetValue[] offsets = null;
+        if (offsetList != null) {
+            offsets = new OffsetValue[offsetList.size()];
+            offsetList.toArray(offsets);
 
-        if (offsets.length > 1) {
-            Arrays.sort(offsets, this::compareTo);
+            if (offsets.length > 1) {
+                Arrays.sort(offsets, this::compareTo);
+            }
         }
+
         return offsets;
     }
 
     private void changeStreamTo(int key) throws IOException {
-        Map<String, Object> offsetValue = (Map<String, Object>) offset.get(key + "");
-        String file = (String) offsetValue.get(FILE);
-        long position = (long) offsetValue.get(POSITION);
+        OffsetValue offsetValue = offset.get(key + "");
+        String file = offsetValue.getFile();
+        long position = offsetValue.getPosition();
         LOG.info("Open FileChannel:{} with position:{}", path + File.separator + file, position);
         FileChannel fileChannel = FileChannel.open(Paths.get(path, file), StandardOpenOption.READ);
         fileChannel.position(position);
 
         if (channel != null) {
             // 关闭当前流
-            LOG.info("Find files.queue = {} for FileStreamSourceTask!", offset.size());
+            LOG.info("Find offsets = {} for FileStreamSourceTask!", offset);
             LOG.info("Close current FileChannel:{}", path + File.separator + filename);
             channel.close();
         }
@@ -415,7 +427,7 @@ public class FileStreamSourceTask extends SourceTask {
         return filename;
     }
 
-    private int compareTo(Map<String, Object> o1, Map<String, Object> o2) {
-        return ((LocalDateTime) o1.get(CREATION_TIME)).compareTo((LocalDateTime) o2.get(CREATION_TIME));
+    private int compareTo(OffsetValue o1, OffsetValue o2) {
+        return ( o1.getLastModifyTime()).compareTo( o2.getLastModifyTime());
     }
 }

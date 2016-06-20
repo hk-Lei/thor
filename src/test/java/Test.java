@@ -1,3 +1,6 @@
+import com.alibaba.fastjson.JSONObject;
+import com.emar.kafka.offset.OffsetValue;
+import com.emar.kafka.utils.DateUtils;
 import org.apache.commons.lang3.StringUtils;
 
 import java.io.File;
@@ -39,22 +42,38 @@ public class Test {
 //            System.err.println(e);
 //        }
 
+//
+//        Map<String, String> map = new HashMap<>();
+//
+//        map.put("a", null);
+//
+//        String path1 = "i_rtb_bidreq_10_30_20160613.dat";
+//        String path2 = "i_rtb_bidreq_9_30_20160613.dat";
+//
+////        System.out.println(path1.compareTo(path2));
+//        String prefix="i_rtb_bidreq_";
+//        String suffix=".dat";
+//        String time1 = path1.substring(prefix.length()).split(suffix)[0];
+//        String time2 = path2.substring(prefix.length()).split(suffix)[0];
+//
+//        System.out.println(time1);
 
-        Map<String, String> map = new HashMap<>();
 
-        map.put("a", null);
+        OffsetValue value = new OffsetValue("test1.log", 12L, LocalDateTime.now());
 
-        String path1 = "i_rtb_bidreq_10_30_20160613.dat";
-        String path2 = "i_rtb_bidreq_9_30_20160613.dat";
 
-//        System.out.println(path1.compareTo(path2));
-        String prefix="i_rtb_bidreq_";
-        String suffix=".dat";
-        String time1 = path1.substring(prefix.length()).split(suffix)[0];
-        String time2 = path2.substring(prefix.length()).split(suffix)[0];
+        Map<String, Object> offset = new HashMap<>();
+        offset.put("0", value.toString());
+        System.out.println(offset);
 
-        System.out.println(time1);
+        String offsetValue = (String) offset.get("0");
 
+        System.out.println(offsetValue);
+
+        OffsetValue jsonObject = JSONObject.parseObject(offsetValue, OffsetValue.class);
+        System.out.println(jsonObject.getFile());
+        System.out.println(jsonObject.getPosition());
+        System.out.println(jsonObject.getLastModifyTime());
     }
 
     public static String getNextTime(){

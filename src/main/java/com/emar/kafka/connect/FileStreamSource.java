@@ -80,12 +80,17 @@ public class FileStreamSource extends SourceConnector {
         // Only one input stream makes sense.
         Map<String, String> config = new HashMap<>();
         config.put(PATH_CONFIG, path);
-        config.put(IGNORE_OFFSET, ignoreOffset);
-        config.put(START_TIME, startTime);
-        config.put(FILE_PREFIX_CONFIG, filePrefix);
-        config.put(FILE_SUFFIX_CONFIG, fileSuffix);
+        if (ignoreOffset != null)
+            config.put(IGNORE_OFFSET, ignoreOffset);
+        if (startTime != null)
+            config.put(START_TIME, startTime);
+        if (filePrefix != null)
+            config.put(FILE_PREFIX_CONFIG, filePrefix);
+        if (fileSuffix != null)
+            config.put(FILE_SUFFIX_CONFIG, fileSuffix);
         config.put(TOPIC_CONFIG, topic);
-        config.put(INTERCEPTOR_SCHEME, scheme);
+        if (scheme !=null)
+            config.put(INTERCEPTOR_SCHEME, scheme);
         configs.add(config);
         return configs;
     }
