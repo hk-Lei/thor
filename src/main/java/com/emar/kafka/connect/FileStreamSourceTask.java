@@ -396,7 +396,7 @@ public class FileStreamSourceTask extends SourceTask {
                     continue;
 
                 if (lastModifyTime.compareTo(start) >= 0) {
-                    OffsetValue value = new OffsetValue(fileName, files.getLongValue(fileName), lastModifyTime);
+                    OffsetValue value = new OffsetValue(fileName, getPosition(fileName), lastModifyTime);
                     if (offsetList == null) {
                         offsetList = new ArrayList<>();
                     }
@@ -461,6 +461,14 @@ public class FileStreamSourceTask extends SourceTask {
 
     private String logFilename() {
         return filename;
+    }
+
+    private long getPosition(String file){
+        if (files == null) {
+            return 0L;
+        } else {
+            return files.getLongValue(file);
+        }
     }
 
     private void logOffset() {
