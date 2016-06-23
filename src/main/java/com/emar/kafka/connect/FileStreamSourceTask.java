@@ -377,8 +377,8 @@ public class FileStreamSourceTask extends SourceTask {
     }
 
     private void checkAndAddNewFileToOffset() {
-        OffsetValue currentOffsetValue = offset.get("0");
-        OffsetValue[] offsets = getOffsets(DateUtils.getOffsetLastModifyTime(currentOffsetValue));
+        lastModifyTime = DateUtils.getFileLastModifyTime(path, filename);
+        OffsetValue[] offsets = getOffsets(lastModifyTime);
         if (offsets != null) {
             for (int i = 1; i < offsets.length; i++) {
                 offset.put(i + "", offsets[i]);
@@ -436,6 +436,7 @@ public class FileStreamSourceTask extends SourceTask {
         }
         channel = fileChannel;
         filename = file;
+        lastModifyTime = DateUtils.getFileLastModifyTime(path, filename);
         this.position = position;
     }
 
@@ -449,7 +450,7 @@ public class FileStreamSourceTask extends SourceTask {
         for (String file : temp.keySet()) {
             if (!file.equals(filename)) {
                 LocalDateTime fileLastModifyTime = DateUtils.getFileLastModifyTime(path, file);
-                if (fileLastModifyTime == null || LocalDateTime.now().minusMinutes(1).compareTo(fileLastModifyTime) > 0) {
+                if (fileLastModifyTime == null || LocalDateTime.now().minusMinutes(10).compareTo(fileLastModifyTime) > 0) {
                     LOG.info("remove file: {fileName:{}, position:{}} from files:{}", file, temp.get(file), temp);
                     continue;
                 }
@@ -472,15 +473,14 @@ public class FileStreamSourceTask extends SourceTask {
     }
 
     private void logOffset() {
-        if (System.currentTimeMillis() - logOffsetTime > 5 * 1000) {
+        if (System.currentTimeMillis() - logOffsetTime > 10 * 1000) {
             LOG.info("current offset: {}", offset);
             logOffsetTime = System.currentTimeMillis();
         }
     }
 
     private void checkFiles() {
-        if (System.currentTimeMillis() - checkFilesTime > 60 * 1000) {
-//            LOG.info("current offset: {}", offset);
+        if (System.currentTimeMillis() - checkFilesTime > 5 * 60 * 1000) {
             removeOlderFromFiles();
             checkFilesTime = System.currentTimeMillis();
         }
