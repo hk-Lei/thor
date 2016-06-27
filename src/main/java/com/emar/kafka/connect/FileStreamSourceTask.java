@@ -50,6 +50,7 @@ public class FileStreamSourceTask extends SourceTask {
     private static final String FILES = "files";
 
     private static final int _1M = 1024 * 1024;
+    private static final int _2M = 2 * _1M;
     private static final int _5M = 5 * _1M;
     private static final int _10M = 10 * _1M;
     private ByteBuffer buffer = null;
@@ -125,7 +126,7 @@ public class FileStreamSourceTask extends SourceTask {
             System.exit(1);
         }
 
-        buffer = ByteBuffer.allocate(_5M);
+        buffer = ByteBuffer.allocate(_1M);
     }
 
     @Override
@@ -138,7 +139,6 @@ public class FileStreamSourceTask extends SourceTask {
                 extractRecords();
             } else {
                 checkOffset(false);
-                lastModifyTime = DateUtils.getFileLastModifyTime(path, filename);
                 logOffset();
                 checkFiles();
             }
@@ -302,6 +302,7 @@ public class FileStreamSourceTask extends SourceTask {
                     checkAndAddNewFileToOffset();
                 }
             }
+            lastModifyTime = DateUtils.getFileLastModifyTime(path, filename);
         }
     }
 
@@ -450,7 +451,7 @@ public class FileStreamSourceTask extends SourceTask {
         for (String file : temp.keySet()) {
             if (!file.equals(filename)) {
                 LocalDateTime fileLastModifyTime = DateUtils.getFileLastModifyTime(path, file);
-                if (fileLastModifyTime == null || LocalDateTime.now().minusMinutes(10).compareTo(fileLastModifyTime) > 0) {
+                if (fileLastModifyTime == null || LocalDateTime.now().minusHours(24).compareTo(fileLastModifyTime) > 0) {
                     LOG.info("remove file: {fileName:{}, position:{}} from files:{}", file, temp.get(file), temp);
                     continue;
                 }
@@ -472,15 +473,21 @@ public class FileStreamSourceTask extends SourceTask {
         }
     }
 
+    /**
+     * 输出当前 offset
+     */
     private void logOffset() {
-        if (System.currentTimeMillis() - logOffsetTime > 10 * 1000) {
+        if (System.currentTimeMillis() - logOffsetTime > 60 * 1000) {
             LOG.info("current offset: {}", offset);
             logOffsetTime = System.currentTimeMillis();
         }
     }
 
+    /**
+     * 定期检查文件修改时间并删除过期文件
+     */
     private void checkFiles() {
-        if (System.currentTimeMillis() - checkFilesTime > 5 * 60 * 1000) {
+        if (System.currentTimeMillis() - checkFilesTime > 60 * 60 * 1000) {
             removeOlderFromFiles();
             checkFilesTime = System.currentTimeMillis();
         }
