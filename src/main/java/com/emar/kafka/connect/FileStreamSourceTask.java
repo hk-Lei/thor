@@ -381,8 +381,21 @@ public class FileStreamSourceTask extends SourceTask {
         lastModifyTime = DateUtils.getFileLastModifyTime(path, filename);
         OffsetValue[] offsets = getOffsets(lastModifyTime);
         if (offsets != null) {
-            for (int i = 1; i < offsets.length; i++) {
-                offset.put(i + "", offsets[i]);
+            int size = offset.size();
+            for (OffsetValue value : offsets) {
+                boolean isAdd = true;
+                for (Map.Entry<String, OffsetValue> entry : offset.entrySet()) {
+                    OffsetValue entryValue = entry.getValue();
+                    if (entryValue.getFile().equals(value.getFile())) {
+                        isAdd = false;
+                        break;
+                    }
+                }
+
+                if (isAdd) {
+                    offset.put(size + "", value);
+                    size++;
+                }
             }
         }
     }
