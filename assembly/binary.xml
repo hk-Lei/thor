@@ -10,8 +10,11 @@
     <!-- put deps in the lib folder -->
     <dependencySets>
         <dependencySet>
+            <excludes>
+                <exclude>org.apache.kafka:connect-runtime</exclude>
+            </excludes>
             <useProjectArtifact>true</useProjectArtifact>
-            <outputDirectory>lib</outputDirectory>
+            <outputDirectory>libs</outputDirectory>
             <unpack>false</unpack>
         </dependencySet>
     </dependencySets>
@@ -40,6 +43,12 @@
     </fileSets>
 
     <files>
+        <file>
+            <source>${project.basedir}/libs/connect-runtime-0.10.0.0.jar</source>
+            <outputDirectory>/libs</outputDirectory>
+            <fileMode>0644</fileMode>
+        </file>
+
         <file>
             <source>${project.basedir}/LICENSE</source>
             <outputDirectory>/</outputDirectory>
