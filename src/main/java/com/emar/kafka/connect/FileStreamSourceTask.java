@@ -169,7 +169,7 @@ public class FileStreamSourceTask extends SourceTask {
 
                 int _r = line.lastIndexOf('\r');
 
-                if (_r == line.length() - 1) {
+                if (line.length() > 0 && _r == line.length() - 1) {
                     line = line.substring(0, _r);
                 }
 
