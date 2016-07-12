@@ -53,9 +53,11 @@ public class DateUtils {
     public static LocalDateTime getStart(String startTime) {
         DateTimeFormatter format = DateUtils.getFormatter(startTime);
         if (startTime == null || startTime.isEmpty() || format == null) {
-            LOG.warn("start.time 为空或者非法（格式必须为 yyyyMMddHHmm 或 yyyyMMddHH 或者 yyyyMMdd），将 start.time 设置为当前时间精确到分钟");
-            // 开始时间精确到小时
-            return LocalDateTime.now().withSecond(0);
+            LocalDateTime time = LocalDateTime.now().withSecond(0).minusMinutes(10);
+            // 开始时间
+            LOG.warn("start.time 为空或者非法(格式必须为 yyyyMMddHHmm 或 yyyyMMddHH 或者 yyyyMMdd) ");
+            LOG.warn("start.time 设置为当前时间(精确到分钟) - 10 分钟 ：{}", time);
+            return time;
         } else
             return LocalDateTime.parse(startTime, format);
     }

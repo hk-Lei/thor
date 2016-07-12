@@ -88,6 +88,8 @@ public class FileStreamSourceTask extends SourceTask {
         path = props.get(FileStreamSource.PATH_CONFIG);
         filePrefix = props.get(FileStreamSource.FILE_PREFIX_CONFIG);
         fileSuffix = props.get(FileStreamSource.FILE_SUFFIX_CONFIG);
+        filePrefix = StringUtils.isBlank(filePrefix) ? "" : filePrefix;
+        fileSuffix = StringUtils.isBlank(fileSuffix) ? "" : fileSuffix;
         fileRegex = filePrefix + "*" + fileSuffix;
 
         topic = props.get(FileStreamSource.TOPIC_CONFIG);
@@ -96,9 +98,11 @@ public class FileStreamSourceTask extends SourceTask {
         }
         partitionKey = "fileType: " + this.path + File.separator + fileRegex;
         partitionValue = "topic: " + topic;
-
         String startTime = props.get(FileStreamSource.START_TIME);
         start = DateUtils.getStart(startTime);
+
+        LOG.info("采集的日志：path={}; fileType={}; topic={}; start.time={}", path, fileRegex, topic, start);
+
         String schemeClass = props.get(FileStreamSource.INTERCEPTOR_SCHEME);
         scheme = ConfigUtil.getInterceptorClass(schemeClass);
 
@@ -222,10 +226,10 @@ public class FileStreamSourceTask extends SourceTask {
         do {
             OffsetValue[] offsets = getOffsets(start);
             if (offsets == null || offsets.length == 0) {
-                LOG.warn("Couldn't find file for FileStreamSourceTask, sleeping to wait (2s) for it to be created");
+                LOG.warn("Couldn't find file for FileStreamSourceTask, sleeping to wait (5s) for it to be created");
                 try {
                     synchronized (this) {
-                        this.wait(2000);
+                        this.wait(5000);
                     }
                 } catch (InterruptedException e) {
                     System.exit(1);
@@ -391,6 +395,18 @@ public class FileStreamSourceTask extends SourceTask {
                         break;
                     }
                 }
+                long fileSize= 0L;
+                try {
+                    BasicFileAttributes attr = Files.readAttributes(Paths.get(path, value.getFile()),
+                            BasicFileAttributes.class);
+                    fileSize = attr.size();
+                } catch (IOException e) {
+                    LOG.error("Couldn't readAttributes from File:{} for FileStreamSourceTask!",
+                            path + File.separator + value.getFile());
+                    e.printStackTrace();
+                }
+                if (fileSize <= getPosition(value.getFile()))
+                    isAdd = false;
 
                 if (isAdd) {
                     offset.put(size + "", value);
@@ -438,15 +454,15 @@ public class FileStreamSourceTask extends SourceTask {
         OffsetValue offsetValue = offset.get(key + "");
         String file = offsetValue.getFile();
         long position = offsetValue.getPosition();
-        LOG.info("Open FileChannel:{} with position:{}", path + File.separator + file, position);
         FileChannel fileChannel = FileChannel.open(Paths.get(path, file), StandardOpenOption.READ);
         fileChannel.position(position);
 
         if (channel != null) {
             // 关闭当前流
-            LOG.info("Find offsets = {} for FileStreamSourceTask!", offset);
-            LOG.info("Close current FileChannel:{}", path + File.separator + filename);
+            LOG.trace("Find offsets = {} for FileStreamSourceTask!", offset);
+            LOG.trace("Close current FileChannel:{}", path + File.separator + filename);
             channel.close();
+            LOG.trace("Open FileChannel:{} with position:{}", path + File.separator + file, position);
         }
         channel = fileChannel;
         filename = file;
@@ -465,12 +481,13 @@ public class FileStreamSourceTask extends SourceTask {
             if (!file.equals(filename)) {
                 LocalDateTime fileLastModifyTime = DateUtils.getFileLastModifyTime(path, file);
                 if (fileLastModifyTime == null || LocalDateTime.now().minusHours(24).compareTo(fileLastModifyTime) > 0) {
-                    LOG.info("remove file: {fileName:{}, position:{}} from files:{}", file, temp.get(file), temp);
+                    LOG.info("remove file: {fileName:{}, position:{}}", file, temp.get(file));
                     continue;
                 }
             }
             files.put(file, temp.get(file));
         }
+        LOG.info("current files: {}", files);
     }
 
 
