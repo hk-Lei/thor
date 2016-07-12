@@ -26,11 +26,13 @@ public class FileStreamSource extends SourceConnector {
     public static final String FILE_SUFFIX_CONFIG = "file.suffix";
     public static final String START_TIME = "start.time";
     public static final String IGNORE_OFFSET = "ignore.offset";
+    public static final String IS_RECURSIVE_DIR = "is.recusive.dir";
     public static final String INTERCEPTOR_SCHEME = "interceptor.scheme";
 
     private static final ConfigDef CONFIG_DEF = new ConfigDef()
             .define(PATH_CONFIG, Type.STRING, Importance.HIGH, "Source path.")
             .define(START_TIME, Type.STRING, Importance.LOW, "Source start time.")
+            .define(IS_RECURSIVE_DIR, Type.STRING, Importance.LOW, "Source ignore offset.")
             .define(IGNORE_OFFSET, Type.STRING, Importance.LOW, "Source ignore offset.")
             .define(INTERCEPTOR_SCHEME, Type.STRING, Importance.LOW, "Source interceptor scheme.")
             .define(FILE_PREFIX_CONFIG, Type.STRING, Importance.HIGH, "Source filename prefix.")
@@ -40,6 +42,7 @@ public class FileStreamSource extends SourceConnector {
     private String path;
     private String startTime;
     private String ignoreOffset;
+    private String isRecursive;
     private String filePrefix;
     private String fileSuffix;
     private String topic;
@@ -55,6 +58,7 @@ public class FileStreamSource extends SourceConnector {
         path = props.get(PATH_CONFIG);
         startTime = props.get(START_TIME);
         ignoreOffset = props.get(IGNORE_OFFSET);
+        isRecursive = props.get(IS_RECURSIVE_DIR);
         filePrefix = props.get(FILE_PREFIX_CONFIG);
         fileSuffix = props.get(FILE_SUFFIX_CONFIG);
         scheme = props.get(INTERCEPTOR_SCHEME);
@@ -83,6 +87,8 @@ public class FileStreamSource extends SourceConnector {
         config.put(PATH_CONFIG, path);
         if (ignoreOffset != null)
             config.put(IGNORE_OFFSET, ignoreOffset);
+        if (isRecursive != null)
+            config.put(IS_RECURSIVE_DIR, isRecursive);
         if (startTime != null)
             config.put(START_TIME, startTime);
         if (filePrefix != null)
