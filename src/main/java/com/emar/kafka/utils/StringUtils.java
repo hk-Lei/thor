@@ -24,4 +24,12 @@ public class StringUtils {
     public static boolean checkBothIsBlank(String str1, String str2){
         return isBlank(str1) && isBlank(str2);
     }
+
+    public static int getIntValue(String string) {
+        if (string == null)
+            return 0;
+        if (string.matches("\\d{1,10}"))
+            return Integer.parseInt(string);
+        return 0;
+    }
 }

@@ -27,13 +27,15 @@ public class FileStreamSource extends SourceConnector {
     public static final String START_TIME = "start.time";
     public static final String IGNORE_OFFSET = "ignore.offset";
     public static final String IS_RECURSIVE_DIR = "is.recusive.dir";
+    public static final String RM_HISTORY_FILES_INTERVAL_HOURS = "rm.history.files.interval.hours";
     public static final String INTERCEPTOR_SCHEME = "interceptor.scheme";
 
     private static final ConfigDef CONFIG_DEF = new ConfigDef()
             .define(PATH_CONFIG, Type.STRING, Importance.HIGH, "Source path.")
             .define(START_TIME, Type.STRING, Importance.LOW, "Source start time.")
-            .define(IS_RECURSIVE_DIR, Type.STRING, Importance.LOW, "Source ignore offset.")
+            .define(IS_RECURSIVE_DIR, Type.STRING, Importance.LOW, "Source is recursive dir.")
             .define(IGNORE_OFFSET, Type.STRING, Importance.LOW, "Source ignore offset.")
+            .define(RM_HISTORY_FILES_INTERVAL_HOURS, Type.STRING, Importance.LOW, "Source rm.history.files.interval.hours.")
             .define(INTERCEPTOR_SCHEME, Type.STRING, Importance.LOW, "Source interceptor scheme.")
             .define(FILE_PREFIX_CONFIG, Type.STRING, Importance.HIGH, "Source filename prefix.")
             .define(FILE_SUFFIX_CONFIG, Type.STRING, Importance.HIGH, "Source filename suffix.")
@@ -43,6 +45,7 @@ public class FileStreamSource extends SourceConnector {
     private String startTime;
     private String ignoreOffset;
     private String isRecursive;
+    private String rmIntervalHours;
     private String filePrefix;
     private String fileSuffix;
     private String topic;
@@ -59,6 +62,7 @@ public class FileStreamSource extends SourceConnector {
         startTime = props.get(START_TIME);
         ignoreOffset = props.get(IGNORE_OFFSET);
         isRecursive = props.get(IS_RECURSIVE_DIR);
+        rmIntervalHours = props.get(RM_HISTORY_FILES_INTERVAL_HOURS);
         filePrefix = props.get(FILE_PREFIX_CONFIG);
         fileSuffix = props.get(FILE_SUFFIX_CONFIG);
         scheme = props.get(INTERCEPTOR_SCHEME);
@@ -89,6 +93,8 @@ public class FileStreamSource extends SourceConnector {
             config.put(IGNORE_OFFSET, ignoreOffset);
         if (isRecursive != null)
             config.put(IS_RECURSIVE_DIR, isRecursive);
+        if (rmIntervalHours != null)
+            config.put(RM_HISTORY_FILES_INTERVAL_HOURS, rmIntervalHours);
         if (startTime != null)
             config.put(START_TIME, startTime);
         if (filePrefix != null)

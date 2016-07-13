@@ -56,20 +56,25 @@ public class Test {
 
 
         long start = System.nanoTime();
+        System.out.println(Integer.MAX_VALUE);
 
         System.out.println(start);
 
         int i = 0;
         while (true){
             i++;
-            if (i == 50)
+            if (i == 50) {
                 System.out.println(System.nanoTime() - start);
-            if (i == 100)
+            }
+            if (i == 100) {
                 System.out.println(System.nanoTime() - start);
-            if (i == 500)
+            }
+            if (i == 500) {
                 System.out.println(System.nanoTime() - start);
-            if (i == 1000)
+            }
+            if (i == 1000) {
                 System.out.println(System.nanoTime() - start);
+            }
             if (i == 5000) {
                 System.out.println(System.nanoTime() - start);
                 System.exit(1);

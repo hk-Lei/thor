@@ -49,6 +49,7 @@ public class FileStreamSourceTask extends SourceTask {
     private static final Schema VALUE_SCHEMA = Schema.STRING_SCHEMA;
     private static final String CURRENT = "current";
     private static final String FILES = "files";
+    private static final int DEFAULT_MAX_RM_INTERVAL_HOURS = 24;
 
     private static final int _1M = 1024 * 1024;
     private static final int _2M = 2 * _1M;
@@ -61,6 +62,7 @@ public class FileStreamSourceTask extends SourceTask {
     private int checkCounter;
     private DirectoryStream.Filter<Path> filter;
     private boolean isRecursive;
+    private int rmIntervalHours;
     private LocalDateTime start;
     private LocalDateTime lastModifyTime;
     private String filename;
@@ -131,7 +133,7 @@ public class FileStreamSourceTask extends SourceTask {
                 setupCheckOffset();
             }
         }
-
+        LOG.info("current offset:{}", offset);
         try {
             changeStreamTo(0);
         } catch (IOException e) {
@@ -139,6 +141,10 @@ public class FileStreamSourceTask extends SourceTask {
                     path + File.separator + filename);
             System.exit(1);
         }
+        rmIntervalHours = StringUtils.getIntValue(props.get(FileStreamSource.RM_HISTORY_FILES_INTERVAL_HOURS));
+        // 不配置或者超过最大值 24，取默认最大值 24
+        rmIntervalHours = (rmIntervalHours == 0 || rmIntervalHours > DEFAULT_MAX_RM_INTERVAL_HOURS) ?
+                DEFAULT_MAX_RM_INTERVAL_HOURS : rmIntervalHours;
         buffer = ByteBuffer.allocate(_1M);
     }
 
@@ -296,12 +302,15 @@ public class FileStreamSourceTask extends SourceTask {
             try {
                 changeStreamTo(1);
                 popOffset();
+                if (!isRecursive)
+                    LOG.info("current offset:{}", offset);
             } catch (IOException e) {
                 //TODO 可能得尝试几次，或者等待几秒再尝试一次
                 LOG.error("Couldn't open stream:{} for FileStreamSourceTask! 忽略这个文件",
                         path + File.separator + filename);
                 e.printStackTrace();
                 removeOffset(1);
+                LOG.info("current offset:{}", offset);
             }
         } else if (offset.size() <= 2) {
             if (checkNextIsReady()) {
@@ -310,12 +319,15 @@ public class FileStreamSourceTask extends SourceTask {
                 try {
                     changeStreamTo(1);
                     popOffset();
+                    if (!isRecursive)
+                        LOG.info("current offset:{}", offset);
                 } catch (IOException e) {
                     //TODO 可能得尝试几次，或者等待几秒再尝试一次
                     LOG.error("Couldn't open stream:{} for FileStreamSourceTask! 忽略这个文件",
                             path + File.separator + filename);
                     e.printStackTrace();
                     removeOffset(1);
+                    LOG.info("current offset:{}", offset);
                 }
             } else {
                 checkAndAddNewFileToOffset();
@@ -490,14 +502,13 @@ public class FileStreamSourceTask extends SourceTask {
         if (files == null || files.size() <= 1) {
             return;
         }
-
         JSONObject temp = files;
         files = new JSONObject();
         for (String file : temp.keySet()) {
             if (!file.equals(filename)) {
                 LocalDateTime fileLastModifyTime = DateUtils.getFileLastModifyTime(path, file);
                 if (fileLastModifyTime == null ||
-                        LocalDateTime.now().minusHours(24).compareTo(fileLastModifyTime) > 0) {
+                        LocalDateTime.now().minusHours(rmIntervalHours).compareTo(fileLastModifyTime) > 0) {
                     LOG.info("remove file: {fileName:{}, position:{}}", file, temp.get(file));
                     continue;
                 }
@@ -524,7 +535,7 @@ public class FileStreamSourceTask extends SourceTask {
      * 输出当前 offset
      */
     private void logOffset() {
-        if (System.currentTimeMillis() - logOffsetTime > 60 * 1000) {
+        if (System.currentTimeMillis() - logOffsetTime > 30 * 1000) {
             LOG.info("current offset: {}", offset);
             logOffsetTime = System.currentTimeMillis();
         }
@@ -550,21 +561,15 @@ public class FileStreamSourceTask extends SourceTask {
      * @throws IOException
      */
     private Set<Path> getFiles() throws IOException {
-        Set<Path> paths = null;
+        Set<Path> paths = new HashSet<>();
         if (isRecursive) {
             RecursivePath walk = new RecursivePath(filter);
             Files.walkFileTree(Paths.get(path), walk);
-            for (Path path : walk.paths) {
-                if (paths == null)
-                    paths = new HashSet<>();
-                paths.add(path);
-            }
+            paths.addAll(walk.paths);
             walk.clear();
         } else {
             DirectoryStream<Path> ds = Files.newDirectoryStream(Paths.get(path), filter);
             for (Path path : ds) {
-                if (paths == null)
-                    paths = new HashSet<>();
                 paths.add(path);
             }
             ds.close();
@@ -577,22 +582,22 @@ public class FileStreamSourceTask extends SourceTask {
      * 采集到文件末尾的时的等待策略，根据重复检查新文件的次数设置不同的等待时间
      */
     private void waitStrategy(){
-        if (checkCounter >= 50 && checkCounter < 100) {
+        if (checkCounter >= 10 && checkCounter < 50) {
             Thread.yield();
         }
         try {
             synchronized (this) {
-                if (checkCounter >= 100 && checkCounter < 500) {
+                if (checkCounter >= 50 && checkCounter < 100) {
                     this.wait(100);
                 }
-                if (checkCounter >= 500 && checkCounter < 1000) {
+                if (checkCounter >= 100 && checkCounter < 500) {
                     this.wait(500);
                 }
-                if (checkCounter >= 1000 && checkCounter < 5000) {
+                if (checkCounter >= 500 && checkCounter < 1000) {
                     this.wait(1000);
                 }
-                if (checkCounter >= 5000) {
-                    this.wait(5000);
+                if (checkCounter >= 1000) {
+                    this.wait(2000);
                 }
             }
         } catch (InterruptedException e) {

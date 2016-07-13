@@ -16,6 +16,7 @@
             <useProjectArtifact>true</useProjectArtifact>
             <outputDirectory>libs</outputDirectory>
             <unpack>false</unpack>
+            <fileMode>0644</fileMode>
         </dependencySet>
     </dependencySets>
 
@@ -35,32 +36,10 @@
             <directory>${project.basedir}/config</directory>
             <outputDirectory>config</outputDirectory>
             <includes>
+                <include>*/*</include>
                 <include>*</include>
             </includes>
-            <fileMode>0644</fileMode>
-        </fileSet>
-        <fileSet>
-            <directory>${project.basedir}/config/adwiser</directory>
-            <outputDirectory>config/adwiser</outputDirectory>
-            <includes>
-                <include>*</include>
-            </includes>
-            <fileMode>0644</fileMode>
-        </fileSet>
-        <fileSet>
-            <directory>${project.basedir}/config/bs</directory>
-            <outputDirectory>config/bs</outputDirectory>
-            <includes>
-                <include>*</include>
-            </includes>
-            <fileMode>0644</fileMode>
-        </fileSet>
-        <fileSet>
-            <directory>${project.basedir}/config/rtb</directory>
-            <outputDirectory>config/rtb</outputDirectory>
-            <includes>
-                <include>*</include>
-            </includes>
+            <directoryMode>0755</directoryMode>
             <fileMode>0644</fileMode>
         </fileSet>
 
