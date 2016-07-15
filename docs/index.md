@@ -34,7 +34,7 @@ Thor 是基于 kafka-connect standalone 模式实现的对日志文件的实时�
     bin/thor.sh config/rtb/worker-bj-rtb.properties config/rtb/rtb-camp-mobile.properties &
     
     # 发往杭州 Kafka 的杭州日志服务器启动命令
-    bin/thor.sh config/rtb/worker-hz-rtb.properties config/rtb/rtb-request-pc.properties config/rtb/rtb-camp-pc.properties config/rtb/rtb-request-mobile.properties &  
+    bin/thor.sh config/rtb/worker-hz-rtb.properties  config/rtb/rtb-camp-pc.properties config/rtb/rtb-request-mobile.properties &  
 ```
 
 实时采集监控：
@@ -63,7 +63,7 @@ GET /connectors/${connector-name}/config
 ```rest
 GET /connectors/${connector-name}/status
 ```
-5. 通知某一个 connector 采集
+5. 停止某一个 connector 采集
 ```rest
 PUT /connectors/${connector-name}/pause
 Host: connect.example.com

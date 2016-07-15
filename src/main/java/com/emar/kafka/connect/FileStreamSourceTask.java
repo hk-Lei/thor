@@ -29,6 +29,7 @@ import org.apache.kafka.connect.data.Schema;
 import org.apache.kafka.connect.errors.ConnectException;
 import org.apache.kafka.connect.source.SourceRecord;
 import org.apache.kafka.connect.source.SourceTask;
+import org.eclipse.jetty.util.log.Log;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -109,9 +110,6 @@ public class FileStreamSourceTask extends SourceTask {
         partitionKey = "fileType: " + this.path + File.separator + fileRegex;
         partitionValue = "topic: " + topic;
         String startTime = props.get(FileStreamSource.START_TIME);
-        start = DateUtils.getStart(startTime);
-
-        LOG.info("采集的日志：path={}; fileType={}; topic={}; start.time={}", path, fileRegex, topic, start);
 
         String schemeClass = props.get(FileStreamSource.INTERCEPTOR_SCHEME);
         scheme = ConfigUtil.getInterceptorClass(schemeClass);
@@ -121,18 +119,21 @@ public class FileStreamSourceTask extends SourceTask {
         boolean ignoreOffset = Boolean.parseBoolean(props.get(FileStreamSource.IGNORE_OFFSET));
         if (ignoreOffset) {
             LOG.warn("ignore.offset 为 true, 将忽略之前的 offset，以 start.time 为首要参考对象");
+            start = DateUtils.getStart(startTime);
             initOffset();
         } else {
             LOG.warn("ignore.offset 为 false（默认为 false）, 将以之前的 offset 为首要参考对象");
             Map<String, Object> storeOffset = context.offsetStorageReader().offset(offsetKey());
             if (storeOffset == null) {
                 LOG.warn("Local stored offset is null! 以 start.time 为参考对象");
+                start = DateUtils.getStart(startTime);
                 initOffset();
             } else {
                 storeOffsets(storeOffset);
                 setupCheckOffset();
             }
         }
+        LOG.info("采集的日志：path={}; fileType={}; topic={}; start.time={}", path, fileRegex, topic, start);
         LOG.info("current offset:{}", offset);
         try {
             changeStreamTo(0);
@@ -157,8 +158,8 @@ public class FileStreamSourceTask extends SourceTask {
                 buffer.flip();
                 extractRecords();
             } else {
-                runtimeCheckOffset();
                 logOffset();
+                runtimeCheckOffset();
                 checkFiles();
             }
             return records;
@@ -257,7 +258,6 @@ public class FileStreamSourceTask extends SourceTask {
                 }
                 offset.put(i + "", offsets[i]);
             }
-            LOG.info("current offset:{}", offset);
         } while (offset == null);
     }
 
@@ -335,7 +335,6 @@ public class FileStreamSourceTask extends SourceTask {
                 waitStrategy();
             }
         }
-        lastModifyTime = DateUtils.getFileLastModifyTime(path, filename);
     }
 
     private void storeOffsets(Map<String, Object> storeOffset) {
@@ -344,7 +343,9 @@ public class FileStreamSourceTask extends SourceTask {
             if (offset == null) {
                 offset = new HashMap<>();
             }
-            offset.put("0", JSONObject.parseObject(current, OffsetValue.class));
+            OffsetValue currentOffsetValue = JSONObject.parseObject(current, OffsetValue.class);
+            start = DateUtils.getOffsetLastModifyTime(currentOffsetValue);
+            offset.put("0", currentOffsetValue);
         }
 
         String offsets = (String) storeOffset.get(FILES);
@@ -411,30 +412,38 @@ public class FileStreamSourceTask extends SourceTask {
 
     private void checkAndAddNewFileToOffset() {
         lastModifyTime = DateUtils.getFileLastModifyTime(path, filename);
+        if (lastModifyTime == null) {
+            lastModifyTime = DateUtils.getOffsetLastModifyTime(offset.get(0+""));
+        }
+
         OffsetValue[] offsets = getOffsets(lastModifyTime);
         if (offsets != null) {
             int size = offset.size();
             for (OffsetValue value : offsets) {
+                String file = value.getFile();
                 boolean isAdd = true;
                 for (Map.Entry<String, OffsetValue> entry : offset.entrySet()) {
                     OffsetValue entryValue = entry.getValue();
-                    if (entryValue.getFile().equals(value.getFile())) {
+                    if (entryValue.getFile().equals(file)) {
                         isAdd = false;
                         break;
                     }
                 }
                 long fileSize= 0L;
                 try {
-                    BasicFileAttributes attr = Files.readAttributes(Paths.get(path, value.getFile()),
+                    BasicFileAttributes attr = Files.readAttributes(Paths.get(path, file),
                             BasicFileAttributes.class);
                     fileSize = attr.size();
                 } catch (IOException e) {
                     LOG.error("Couldn't readAttributes from File:{} for FileStreamSourceTask!",
-                            path + File.separator + value.getFile());
+                            path + File.separator + file);
                     e.printStackTrace();
                 }
-                if (fileSize <= getPosition(value.getFile()))
+                if (files != null &&
+                        files.containsKey(file) &&
+                        fileSize <= getPosition(file)) {
                     isAdd = false;
+                }
 
                 if (isAdd) {
                     offset.put(size + "", value);
