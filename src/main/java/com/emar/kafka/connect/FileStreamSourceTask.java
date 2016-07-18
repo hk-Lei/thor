@@ -29,7 +29,6 @@ import org.apache.kafka.connect.data.Schema;
 import org.apache.kafka.connect.errors.ConnectException;
 import org.apache.kafka.connect.source.SourceRecord;
 import org.apache.kafka.connect.source.SourceTask;
-import org.eclipse.jetty.util.log.Log;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -196,7 +195,9 @@ public class FileStreamSourceTask extends SourceTask {
                 if (line.length() > 0) {
                     if (records == null)
                         records = new ArrayList<>();
-                    records.add(new SourceRecord(offsetKey(), offsetValue(), topic, VALUE_SCHEMA, scheme.deserialize(line)));
+                    String value = scheme.deserialize(line);
+                    if (StringUtils.isNotBlank(value))
+                        records.add(new SourceRecord(offsetKey(), offsetValue(), topic, VALUE_SCHEMA, value));
                 }
             }
         }
