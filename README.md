@@ -71,7 +71,7 @@ Thor 是基于 kafka-connect (0.10.0.0) 实现的对日志文件的实时采集�
 
 ## Note
 
-经阅读 Kafka Connect 的 `org.apache.kafka.connect.runtime.WorkerSourceTask` 类的源码，发现其 `outstandingMessages （IdentityHashMap<ProducerRecord<byte[], byte[]>, ProducerRecord<byte[], byte[]>>）` 的大小不受限制，当某些原因导致采集日志的写入速度大于发往 kafka 的速度时，其 size 会剧增可能会导致 offset flush 失败或者内存溢出等异常。因此，我加入了以下代码做了简单的控制：
+经阅读 Kafka Connect 的 `org.apache.kafka.connect.runtime.WorkerSourceTask` 类的源码，发现其 `outstandingMessages （IdentityHashMap<ProducerRecord<byte[], byte[]>, ProducerRecord<byte[], byte[]>>）` 的大小不受限制，当某些原因导致采集日志的写入速度大于发往 kafka 的速度时，其 size 会剧增可能会导致 offset flush 失败或者内存溢出等异常。因此，我在该类的源码加入了以下代码做了简单的控制：
 
 ```java
     ...
