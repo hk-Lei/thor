@@ -37,36 +37,36 @@ Thor 是基于 kafka-connect (0.10.0.0) 实现的对日志文件的实时采集�
     
 ### Rest API
 
-1. 查看某个服务器的采集进程的 connectors：
++ 查看某个服务器的采集进程的 connectors：
 ```rest
-GET /connectors
+    GET /connectors
 ```
-2. 查看采集进程中的某个 connector
++ 查看采集进程中的某个 connector
 ```rest
-GET /connectorts/${connector-name}
+    GET /connectorts/${connector-name}
 ```
-3. 获取某个 connector 的配置信息
++ 获取某个 connector 的配置信息
 ```rest
-GET /connectors/${connector-name}/config
+    GET /connectors/${connector-name}/config
 ```
-4. 获取某个 connector 的状态
++ 获取某个 connector 的状态
 ```rest
-GET /connectors/${connector-name}/status
+    GET /connectors/${connector-name}/status
 ```
-5. 停止某一个 connector 采集
++ 停止某一个 connector 采集
 ```rest
-PUT /connectors/${connector-name}/pause
-Host: connect.example.com
+    PUT /connectors/${connector-name}/pause
+    Host: connect.example.com
 ```
-6. 启动一个在停止状态的 connector
++ 启动一个在停止状态的 connector
 ```rest
-PUT /connectors/${connector-name}/resume
-Host: connect.example.com
+    PUT /connectors/${connector-name}/resume
+    Host: connect.example.com
 ```
-7. 重启一个 connector 
++ 重启一个 connector 
 ```rest
-POST /connectors/${connector-name}/restart
-Host: connect.example.com
+    POST /connectors/${connector-name}/restart
+    Host: connect.example.com
 ```
 
 ## Note
