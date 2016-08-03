@@ -36,8 +36,8 @@ SOFTWARE.
         </Console>
 
         <RollingFile name="A1"
-                     fileName="logs/thor.log"
-                     filePattern="logs/thor.log.%i.%d{yyyyMMddHHmmss}">
+                     fileName="${log4j:configParentLocation}/../logs/thor.log"
+                     filePattern="${log4j:configParentLocation}/../logs/thor.log.%i.%d{yyyyMMddHHmmss}">
             <PatternLayout>
                 <pattern>${pattern}</pattern>
             </PatternLayout>
