@@ -1,6 +1,9 @@
 package com.emar.kafka.offset;
 
 import com.emar.kafka.utils.DateUtils;
+import com.emar.kafka.utils.FileUtil;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.time.LocalDateTime;
 
@@ -9,31 +12,50 @@ import java.time.LocalDateTime;
  * @Date 2016/6/20
  */
 public class OffsetValue {
-    private String file;
+    private static final Logger LOG = LoggerFactory.getLogger(OffsetValue.class);
+    private String path;
+    private String filename;
+    private String inode;
     private long position;
     private String lastModifyTime;
 
     public OffsetValue() {
     }
 
-    public OffsetValue(String file, long position, String lastModifyTime) {
-        this.file = file;
+    public OffsetValue(String path, String filename, long position, String lastModifyTime) {
+        this.path = path;
+        this.filename = filename;
         this.position = position;
         this.lastModifyTime = lastModifyTime;
+        this.inode = FileUtil.getFileInode(path, filename);
     }
 
-    public OffsetValue(String file, long position, LocalDateTime lastModifyTime) {
-        this.file = file;
-        this.position = position;
-        this.lastModifyTime = DateUtils.getOffsetLastModifyTime(lastModifyTime);
+    public OffsetValue(String path, String filename, long position, LocalDateTime lastModifyTime) {
+        this(path, filename, position, DateUtils.getOffsetLastModifyTime(lastModifyTime));
     }
 
-    public String getFile() {
-        return file;
+    public String getPath() {
+        return path;
     }
 
-    public void setFile(String file) {
-        this.file = file;
+    public void setPath(String path) {
+        this.path = path;
+    }
+
+    public String getFilename() {
+        return filename;
+    }
+
+    public void setFilename(String filename) {
+        this.filename = filename;
+    }
+
+    public String getInode() {
+        return inode;
+    }
+
+    public void setInode(String inode) {
+        this.inode = inode;
     }
 
     public long getPosition() {
@@ -55,7 +77,7 @@ public class OffsetValue {
     @Override
     public String toString() {
         return "{" +
-                    "file:'" + file + '\'' + ", " +
+                    "filename:'" + filename + '\'' + ", " +
                     "position:" + position + ", " +
                     "lastModifyTime:'" + lastModifyTime + "\'" +
                 '}';

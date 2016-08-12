@@ -77,7 +77,7 @@ public class DateUtils {
         return format.format(dateTime);
     }
 
-    public static LocalDateTime getFileLastModifyTime(String path,String file){
+    public static LocalDateTime getFileLastModifyTime(String path, String file){
         return getFileLastModifyTime(Paths.get(path, file));
     }
 
@@ -95,5 +95,13 @@ public class DateUtils {
         } else {
             return null;
         }
+    }
+
+    public static String getLastModifyTime(Path path) {
+        return getOffsetLastModifyTime(getFileLastModifyTime(path));
+    }
+
+    public static String getLastModifyTime(String path, String file) {
+        return getOffsetLastModifyTime(getFileLastModifyTime(path, file));
     }
 }
