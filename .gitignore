@@ -45,3 +45,7 @@ package/
 
 ~*
 .vertx/
+
+config/adwiser/
+config/bs/
+config/rtb/
