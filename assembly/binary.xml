@@ -46,22 +46,22 @@
     </fileSets>
 
     <files>
-        <filename>
+        <file>
             <source>${project.basedir}/libs/connect-runtime-0.10.0.0.jar</source>
             <outputDirectory>/libs</outputDirectory>
             <fileMode>0644</fileMode>
-        </filename>
+        </file>
 
-        <filename>
+        <file>
             <source>${project.basedir}/LICENSE</source>
             <outputDirectory>/</outputDirectory>
             <fileMode>0644</fileMode>
-        </filename>
+        </file>
 
-        <filename>
+        <file>
             <source>${project.basedir}/README.md</source>
             <outputDirectory>/</outputDirectory>
             <fileMode>0644</fileMode>
-        </filename>
+        </file>
     </files>
 </assembly>

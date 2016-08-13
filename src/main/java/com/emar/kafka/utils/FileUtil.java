@@ -7,6 +7,8 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.attribute.FileTime;
+import java.time.LocalDateTime;
 
 /**
  * Author: moxingxing
@@ -96,6 +98,38 @@ public class FileUtil {
     public static long getFileSize(String absolutePathFile){
         Path file = Paths.get(absolutePathFile);
         return getFileSize(file);
+    }
+
+
+    /**
+     * 获取 file 的 最后修改时间
+     * @param path
+     * @return
+     */
+    public static LocalDateTime getLastModifyTime(Path path) {
+        if (Files.exists(path)) {
+            try {
+                FileTime lastModifiedTime = (FileTime) Files.getAttribute(path, "basic:lastModifiedTime");
+                return DateUtils.getLocalDateTime(lastModifiedTime.toInstant());
+            } catch (IOException e) {
+                LOG.error("Couldn't readAttributes from File:{} for FileStreamSourceTask!",
+                        path.toString());
+                e.printStackTrace();
+                return null;
+            }
+        } else {
+            return null;
+        }
+    }
+
+    /**
+     * 获取 file 的 最后修改时间
+     * @param path
+     * @param filename
+     * @return
+     */
+    public static LocalDateTime getLastModifyTime(String path, String filename) {
+        return getLastModifyTime(Paths.get(path, filename));
     }
 
 }

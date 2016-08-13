@@ -2,9 +2,9 @@ package com.emar.kafka.offset;
 
 import com.emar.kafka.utils.DateUtils;
 import com.emar.kafka.utils.FileUtil;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.time.LocalDateTime;
 
 /**
@@ -12,7 +12,6 @@ import java.time.LocalDateTime;
  * @Date 2016/6/20
  */
 public class OffsetValue {
-    private static final Logger LOG = LoggerFactory.getLogger(OffsetValue.class);
     private String path;
     private String filename;
     private String inode;
@@ -22,16 +21,16 @@ public class OffsetValue {
     public OffsetValue() {
     }
 
-    public OffsetValue(String path, String filename, long position, String lastModifyTime) {
+    public OffsetValue(String path, String filename, String lastModifyTime) {
         this.path = path;
         this.filename = filename;
-        this.position = position;
         this.lastModifyTime = lastModifyTime;
+        this.position = 0L;
         this.inode = FileUtil.getFileInode(path, filename);
     }
 
-    public OffsetValue(String path, String filename, long position, LocalDateTime lastModifyTime) {
-        this(path, filename, position, DateUtils.getOffsetLastModifyTime(lastModifyTime));
+    public OffsetValue(String path, String filename, LocalDateTime lastModifyTime) {
+        this(path, filename, DateUtils.getOffsetLastModifyTime(lastModifyTime));
     }
 
     public String getPath() {
@@ -74,10 +73,16 @@ public class OffsetValue {
         this.lastModifyTime = lastModifyTime;
     }
 
+    public void setLastModifyTime(LocalDateTime lastModifyTime) {
+        this.lastModifyTime = DateUtils.getOffsetLastModifyTime(lastModifyTime);
+    }
+
     @Override
     public String toString() {
+        Path file = Paths.get(path, filename);
         return "{" +
-                    "filename:'" + filename + '\'' + ", " +
+                    "filename:'" + file.toString() + '\'' + ", " +
+                    "inode:'" + inode + '\'' + ", " +
                     "position:" + position + ", " +
                     "lastModifyTime:'" + lastModifyTime + "\'" +
                 '}';
