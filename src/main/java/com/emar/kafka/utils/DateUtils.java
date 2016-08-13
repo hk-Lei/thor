@@ -4,11 +4,6 @@ import com.emar.kafka.offset.OffsetValue;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.nio.file.attribute.FileTime;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
@@ -75,25 +70,5 @@ public class DateUtils {
     public static String getOffsetLastModifyTime(LocalDateTime dateTime){
         DateTimeFormatter format = DateTimeFormatter.ofPattern(offsetPattern);
         return format.format(dateTime);
-    }
-
-    public static LocalDateTime getFileLastModifyTime(String path,String file){
-        return getFileLastModifyTime(Paths.get(path, file));
-    }
-
-    public static LocalDateTime getFileLastModifyTime(Path path){
-        if (Files.exists(path)) {
-            try {
-                FileTime lastModifiedTime = (FileTime) Files.getAttribute(path, "basic:lastModifiedTime");
-                return DateUtils.getLocalDateTime(lastModifiedTime.toInstant());
-            } catch (IOException e) {
-                LOG.error("Couldn't readAttributes from File:{} for FileStreamSourceTask!",
-                        path.toString());
-                e.printStackTrace();
-                return null;
-            }
-        } else {
-            return null;
-        }
     }
 }

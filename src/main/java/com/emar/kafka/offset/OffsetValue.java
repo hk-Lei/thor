@@ -1,7 +1,10 @@
 package com.emar.kafka.offset;
 
 import com.emar.kafka.utils.DateUtils;
+import com.emar.kafka.utils.FileUtil;
 
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.time.LocalDateTime;
 
 /**
@@ -9,31 +12,49 @@ import java.time.LocalDateTime;
  * @Date 2016/6/20
  */
 public class OffsetValue {
-    private String file;
+    private String path;
+    private String filename;
+    private String inode;
     private long position;
     private String lastModifyTime;
 
     public OffsetValue() {
     }
 
-    public OffsetValue(String file, long position, String lastModifyTime) {
-        this.file = file;
-        this.position = position;
+    public OffsetValue(String path, String filename, String lastModifyTime) {
+        this.path = path;
+        this.filename = filename;
         this.lastModifyTime = lastModifyTime;
+        this.position = 0L;
+        this.inode = FileUtil.getFileInode(path, filename);
     }
 
-    public OffsetValue(String file, long position, LocalDateTime lastModifyTime) {
-        this.file = file;
-        this.position = position;
-        this.lastModifyTime = DateUtils.getOffsetLastModifyTime(lastModifyTime);
+    public OffsetValue(String path, String filename, LocalDateTime lastModifyTime) {
+        this(path, filename, DateUtils.getOffsetLastModifyTime(lastModifyTime));
     }
 
-    public String getFile() {
-        return file;
+    public String getPath() {
+        return path;
     }
 
-    public void setFile(String file) {
-        this.file = file;
+    public void setPath(String path) {
+        this.path = path;
+    }
+
+    public String getFilename() {
+        return filename;
+    }
+
+    public void setFilename(String filename) {
+        this.filename = filename;
+    }
+
+    public String getInode() {
+        return inode;
+    }
+
+    public void setInode(String inode) {
+        this.inode = inode;
     }
 
     public long getPosition() {
@@ -52,10 +73,16 @@ public class OffsetValue {
         this.lastModifyTime = lastModifyTime;
     }
 
+    public void setLastModifyTime(LocalDateTime lastModifyTime) {
+        this.lastModifyTime = DateUtils.getOffsetLastModifyTime(lastModifyTime);
+    }
+
     @Override
     public String toString() {
+        Path file = Paths.get(path, filename);
         return "{" +
-                    "file:'" + file + '\'' + ", " +
+                    "filename:'" + file.toString() + '\'' + ", " +
+                    "inode:'" + inode + '\'' + ", " +
                     "position:" + position + ", " +
                     "lastModifyTime:'" + lastModifyTime + "\'" +
                 '}';
