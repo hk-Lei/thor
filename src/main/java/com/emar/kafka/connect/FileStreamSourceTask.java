@@ -3,7 +3,7 @@ package com.emar.kafka.connect;
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONObject;
 import com.emar.kafka.interceptor.Scheme;
-import com.emar.kafka.offset.OffsetValue;
+import com.emar.kafka.offset.Offset;
 import com.emar.kafka.utils.*;
 import org.apache.kafka.connect.data.Schema;
 import org.apache.kafka.connect.errors.ConnectException;
@@ -17,7 +17,6 @@ import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.file.*;
-import java.nio.file.attribute.BasicFileAttributes;
 import java.time.LocalDateTime;
 import java.util.*;
 
@@ -39,27 +38,27 @@ public class FileStreamSourceTask extends SourceTask {
     private ByteBuffer buffer = null;
 
     private String path;
+    private String fileRegex;
     private int index;
     private int checkCounter;
     private DirectoryStream.Filter<Path> filter;
     private boolean isRecursive;
     private int rmIntervalHours;
     private LocalDateTime start;
-    private LocalDateTime lastModifyTime;
     private String filename;
     private long position;
     private FileChannel channel;
     private ArrayList<SourceRecord> records;
     private String topic = null;
-    private Scheme scheme = null;
 
-    private Map<String, OffsetValue> offset;
+    private Scheme scheme = null;
+    private LinkedList<Offset> queue;
     private JSONObject filePositions;
     private JSONObject fileKeys;
-    private boolean transferInodes;
 
     private String partitionKey;
     private String partitionValue;
+    private boolean transferInodes;
 
     private long logOffsetTime = System.currentTimeMillis();
     private long checkFilesTime = System.currentTimeMillis();
@@ -87,7 +86,7 @@ public class FileStreamSourceTask extends SourceTask {
         String fileSuffix = props.get(FileStreamSource.FILE_SUFFIX_CONFIG);
         filePrefix = StringUtils.isBlank(filePrefix) ? "" : filePrefix;
         fileSuffix = StringUtils.isBlank(fileSuffix) ? "" : fileSuffix;
-        String fileRegex = filePrefix + "*" + fileSuffix;
+        fileRegex = filePrefix + "*" + fileSuffix;
         final PathMatcher matcher = FileSystems.getDefault().getPathMatcher("glob:" + fileRegex);
 
         filter = entry -> matcher.matches(entry.getFileName()) &&
@@ -110,6 +109,7 @@ public class FileStreamSourceTask extends SourceTask {
         if (ignoreOffset) {
             LOG.warn("ignore.offset 为 true, 将忽略之前的 offset，以 start.time 为首要参考对象");
             start = DateUtils.getStart(startTime);
+            LOG.info("采集的日志：path={}; fileType={}; topic={}; start.time={}", path, fileRegex, topic, start);
             initOffset();
         } else {
             LOG.warn("ignore.offset 为 false（默认为 false）, 将以之前的 offset 为首要参考对象");
@@ -118,13 +118,12 @@ public class FileStreamSourceTask extends SourceTask {
                 LOG.warn("Local stored offset is null! 以 start.time 为参考对象");
                 start = DateUtils.getStart(startTime);
                 initOffset();
+                LOG.info("采集的日志：path={}; fileType={}; topic={}; start.time={}", path, fileRegex, topic, start);
             } else {
-                storeOffsets(storeOffset);
-                setupCheckOffset();
+                getStoreOffset(storeOffset);
             }
         }
-        LOG.info("采集的日志：path={}; fileType={}; topic={}; start.time={}", path, fileRegex, topic, start);
-        LOG.info("current offset:{}", offset);
+        LOG.info("current offsets:{}", queue);
         try {
             changeStreamTo(0);
         } catch (IOException e) {
@@ -132,10 +131,12 @@ public class FileStreamSourceTask extends SourceTask {
                     path + File.separator + filename);
             System.exit(1);
         }
+
         rmIntervalHours = StringUtils.getIntValue(props.get(FileStreamSource.RM_HISTORY_FILES_INTERVAL_HOURS));
         // 不配置或者超过最大值 24，取默认最大值 24
         rmIntervalHours = (rmIntervalHours == 0 || rmIntervalHours > DEFAULT_MAX_RM_INTERVAL_HOURS) ?
                 DEFAULT_MAX_RM_INTERVAL_HOURS : rmIntervalHours;
+        removeOlderFromFiles();
     }
 
     @Override
@@ -174,7 +175,7 @@ public class FileStreamSourceTask extends SourceTask {
                 end = i;
                 String line = new String(bytes, from, end - from);
                 position += (end - from) + 1;
-                LOG.trace("Read a line: {} from {}", line, logFilename());
+                LOG.trace("Read a line: {} from {}", line, filename);
 
                 int _r = line.lastIndexOf('\r');
 
@@ -215,13 +216,24 @@ public class FileStreamSourceTask extends SourceTask {
         return Collections.singletonMap(partitionKey, partitionValue);
     }
 
+    /**
+     * 存储的数据：
+     *      current:
+     *          {filename:$filename,inode:$inode,position:$position,lastModifyTime:$lastModifyTime}
+     *      file->position:
+     *          {$filename:$position, ...}
+     *      inode->file:
+     *          {$inode:$filename, ...}
+     * @return
+     */
     private Map<String, String> offsetValue() {
         //TODO - 存储 offset
-        OffsetValue offsetValue = offset.get("0");
+        Offset offsetValue = queue.getFirst();
         offsetValue.setPosition(position);
-        lastModifyTime = FileUtil.getLastModifyTime(path, filename);
+        LocalDateTime lastModifyTime = FileUtil.getLastModifyTime(path, filename);
         offsetValue.setLastModifyTime(DateUtils.getOffsetLastModifyTime(lastModifyTime));
         Map<String, String> offsetMap = new HashMap<>();
+
         offsetMap.put(CURRENT, JSON.toJSONString(offsetValue));
 
         filePositions.put(filename, position);
@@ -231,15 +243,16 @@ public class FileStreamSourceTask extends SourceTask {
             offsetMap.put(INODES, JSON.toJSONString(fileKeys));
             transferInodes = false;
         }
-
         LOG.trace("send:" + offsetMap.toString());
-
         return offsetMap;
     }
 
+    /**
+     * 获取 最后修改时间 >= start 的
+     */
     private void initOffset() {
         do {
-            OffsetValue[] offsets = getOffsets(start);
+            Offset[] offsets = getOffsets(start);
             if (offsets == null || offsets.length == 0) {
                 LOG.warn("Couldn't find file for FileStreamSourceTask, sleeping to wait (5s) for it to be created");
                 try {
@@ -251,96 +264,64 @@ public class FileStreamSourceTask extends SourceTask {
                 }
                 continue;
             }
+
             for (int i = 0; i < offsets.length; i++) {
-                if (offset == null) {
-                    offset = new HashMap<>();
+                if (queue == null) {
+                    queue = new LinkedList<>();
                 }
-                offset.put(i + "", offsets[i]);
+                queue.add(offsets[i]);
                 if (i == 0) {
                     transferInodes = true;
                 }
             }
 
-        } while (offset == null);
+        } while (queue == null);
     }
 
-    /**
-     *
-     */
-    private void setupCheckOffset(){
-        int size = offset.size();
-        Map<String, OffsetValue> tempOffset = offset;
-        offset = new HashMap<>();
-        try {
-            int j = 0;
-            for (int i = 0; i < size; i++) {
-                OffsetValue offsetValue = tempOffset.get(i + "");
-                String filename = offsetValue.getFilename();
-                if (Files.exists(Paths.get(path, filename))) {
-                    BasicFileAttributes attr = Files.readAttributes(Paths.get(path, filename),
-                            BasicFileAttributes.class);
-                    long fileSize = attr.size();
-                    long position = offsetValue.getPosition();
-                    if (position <= fileSize) {
-                        offset.put(j + "", offsetValue);
-                    }
-                }
-            }
-
-            if (offset.size() <= 0) {
-                offset = null;
-                initOffset();
-            }
-        } catch (IOException e) {
-            LOG.error("Couldn't readAttributes from File:{} for FileStreamSourceTask!",
-                    path + File.separator + filename);
-            e.printStackTrace();
-            System.exit(1);
-        }
-    }
     private void runtimeCheckOffset() {
-        if (offset.size() > 2) {
+        if (queue.size() > 2) {
             checkCounter = 0;
             // 关闭当前流, 删除 offset 中过期的 file， 开启下一个文件的采集流
             try {
                 changeStreamTo(1);
-                popOffset();
+                queue.removeFirst();
                 if (!isRecursive)
-                    LOG.info("current offset:{}", offset);
+                    LOG.info("RuntimeCheckOffsets: {}", queue);
             } catch (IOException e) {
                 //TODO 可能得尝试几次，或者等待几秒再尝试一次
                 LOG.error("Couldn't open stream:{} for FileStreamSourceTask! 忽略这个文件",
                         path + File.separator + filename);
                 e.printStackTrace();
-                removeOffset(1);
-                LOG.info("current offset:{}", offset);
+                queue.remove(1);
+                LOG.info("RuntimeCheckedOffsets: {}", queue);
             }
-        } else if (offset.size() <= 2) {
+        } else if (queue.size() <= 2) {
             if (checkNextIsReady()) {
                 checkCounter = 0;
                 // 关闭当前流, 删除 offset 中过期的 file， 开启下一个文件的采集流
                 try {
                     changeStreamTo(1);
-                    popOffset();
+                    queue.removeFirst();
                     if (!isRecursive)
-                        LOG.info("current offset:{}", offset);
+                        LOG.info("RuntimeCheckOffsets: {}", queue);
                 } catch (IOException e) {
                     //TODO 可能得尝试几次，或者等待几秒再尝试一次
                     LOG.error("Couldn't open stream:{} for FileStreamSourceTask! 忽略这个文件",
                             path + File.separator + filename);
                     e.printStackTrace();
-                    removeOffset(1);
-                    LOG.info("current offset:{}", offset);
+                    queue.remove(1);
+                    LOG.info("RuntimeCheckOffsets: {}", queue);
                 }
             } else {
-                OffsetValue before = offset.get("0");
+                Offset before = queue.getFirst();
                 String filename = before.getFilename();
                 String inode = before.getInode();
                 long position = before.getPosition();
+                LocalDateTime lastModifiedTime = DateUtils.getOffsetLastModifyTime(before);
 
-                checkAndAddNewFileToOffset();
+                checkAndAddNewFileToOffset(lastModifiedTime);
 
-                OffsetValue after = offset.get("0");
+                Offset after = queue.getFirst();
                 if (!filename.equals(after.getFilename()) ||
                         !inode.equals(after.getInode()) ||
                         position != after.getPosition()){
@@ -351,6 +332,7 @@ public class FileStreamSourceTask extends SourceTask {
                                 "after check -> {filename:{}; inode:{}, position:{}}",
                                 System.lineSeparator(), filename, inode, position,
                                 System.lineSeparator(), after.getFilename(), after.getInode(), after.getPosition());
+                        LOG.info("current offsets: {}", queue);
                     } catch (IOException e) {
                         LOG.error("切换当前文件流异常");
                         e.printStackTrace();
@@ -363,115 +345,118 @@ public class FileStreamSourceTask extends SourceTask {
         }
     }
 
-    private void storeOffsets(Map<String, Object> storeOffset) {
+    /**
+     * 获取存储的 offset
+     * @param storeOffset
+     */
+    private void getStoreOffset(Map<String, Object> storeOffset) {
         String current = (String) storeOffset.get(CURRENT);
-        if (StringUtils.isNotBlank(current)) {
-            if (offset == null) {
-                offset = new HashMap<>();
-            }
-            OffsetValue currentOffsetValue = JSONObject.parseObject(current, OffsetValue.class);
-            start = DateUtils.getOffsetLastModifyTime(currentOffsetValue);
-            offset.put("0", currentOffsetValue);
-        }
+
+        Offset currentOffset = JSONObject.parseObject(current, Offset.class);
+        start = DateUtils.getOffsetLastModifyTime(currentOffset);
+        LOG.info("采集的日志：path={}; fileType={}; topic={}; start.time={}", path, fileRegex, topic, start);
 
         String offsets = (String) storeOffset.get(FILES);
-        if (StringUtils.isNotBlank(offsets)) {
-            filePositions = JSONObject.parseObject(offsets);
-        }
+        filePositions = JSONObject.parseObject(offsets);
 
         String inodes = (String) storeOffset.get(INODES);
-        if (StringUtils.isNotBlank(inodes)) {
-            fileKeys = JSONObject.parseObject(inodes);
-        }
+        fileKeys = JSONObject.parseObject(inodes);
+
+        checkStoreOffset(currentOffset);
     }
 
-    private void popOffset() {
-        removeOffset(0);
-    }
+    /**
+     * 检查启动时的 offset
+     *  + 如果存储的 offset 的文件不存在 删除
+     *  + 如果存储的 offset 的 position > 文件的大小 暂且假设落日志的主文件名不变
+     */
+    private void checkStoreOffset(Offset offset){
+        LOG.info("Got store offset: {}", offset);
+        String path = offset.getPath();
+        String filename = offset.getFilename();
+        Path file = Paths.get(path, filename);
+        String inode = offset.getInode();
+        long position = offset.getPosition();
 
-    private void removeOffset(int key) {
-        Map<String, OffsetValue> tempOffset = offset;
-        offset = new HashMap<>();
-        OffsetValue offsetValue;
-        for (int i = 0; i < key; i++) {
-            offsetValue = tempOffset.get(i + "");
-            offset.put(i + "", offsetValue);
+        if (queue == null) {
+            queue = new LinkedList<>();
         }
 
-        for (int i = key + 1; i < tempOffset.size(); i++) {
-            offsetValue = tempOffset.get(i + "");
-            offset.put(i - 1 + "", offsetValue);
-        }
-    }
-
-    private boolean checkNextIsReady() {
-        String next = 1 + "";
-        if (offset.containsKey(next)) {
-            OffsetValue offsetValue = offset.get(next);
-            String nextFile = offsetValue.getFilename();
-            long position = offsetValue.getPosition();
-
-            if (Files.exists(Paths.get(path, nextFile))) {
-                try {
-                    BasicFileAttributes attr = Files.readAttributes(Paths.get(path, nextFile),
-                            BasicFileAttributes.class);
-                    long fileSize = attr.size();
-                    return fileSize > position;
-                } catch (IOException e) {
-                    LOG.error("Couldn't readAttributes from File:{} for FileStreamSourceTask!",
-                            path + File.separator + nextFile);
-                    e.printStackTrace();
-                    removeOffset(1);
-                    return false;
+        if (Files.exists(file)) {
+            if (inode.equals(FileUtil.getFileInode(file))) {
+                if (position < FileUtil.getFileSize(file))
+                    queue.add(offset);
+                else {
+                    initOffset();
                 }
-
             } else {
-                LOG.error("Couldn't find File:{} for FileStreamSourceTask!",
-                        path + File.separator + nextFile);
-                removeOffset(1);
-                return false;
+                if (fileKeys.containsKey(inode)) {
+                    offset.setFilename(fileKeys.getString(inode));
+                    queue.add(offset);
+                } else {
+                    initOffset();
+                }
             }
         } else {
-            return false;
+            initOffset();
         }
     }
 
     /**
-     * 检查文件目录下新文件，并按照最后修改时间排序
+     * 检查下一个日志文件是否准备就绪
+     * @return
      */
-    private void checkAndAddNewFileToOffset() {
-        OffsetValue currentOffsetValue = offset.get("0");
-        lastModifyTime = DateUtils.getOffsetLastModifyTime(currentOffsetValue);
+    private boolean checkNextIsReady() {
+        if (queue.size() > 1) {
+            Offset offset = queue.get(1);
+            String nextFile = offset.getFilename();
+            long position = offset.getPosition();
 
-        OffsetValue[] offsets = getOffsets(lastModifyTime);
+            if (Files.exists(Paths.get(path, nextFile))) {
+                long fileSize = FileUtil.getFileSize(Paths.get(path, nextFile));
+                return fileSize > position;
+            } else {
+                LOG.error("Couldn't find File:{} for FileStreamSourceTask!",
+                        path + File.separator + nextFile);
+                queue.remove(1);
+                return false;
+            }
+        } else
+            return false;
+    }
+
+    /**
+     * 检查文件目录下新文件，并按照最后修改时间排序
+     * @param start
+     */
+    private void checkAndAddNewFileToOffset(LocalDateTime start) {
+        Offset[] offsets = getOffsets(start);
         if (offsets != null) {
-            int size = offset.size();
-            for (OffsetValue value : offsets) {
+            for (Offset value : offsets) {
                 String filename = value.getFilename();
                 String inode = value.getInode();
                 long position = value.getPosition();
 
                 boolean isAdd = true;
 
-                for (Map.Entry<String, OffsetValue> entry : offset.entrySet()) {
-                    OffsetValue entryValue = entry.getValue();
-                    if (inode.equals(entryValue.getInode()) && filename.equals(entryValue.getFilename())){
+                for (Offset offset : queue) {
+                    if (inode.equals(offset.getInode()) && filename.equals(offset.getFilename())){
                         isAdd = false;
                         break;
                     }
 
-                    if (inode.equals(entryValue.getInode()) && !filename.equals(entryValue.getFilename())) {
-                        entryValue.setFilename(filename);
-                        entryValue.setPosition(position);
+                    if (inode.equals(offset.getInode()) && !filename.equals(offset.getFilename())) {
+                        offset.setFilename(filename);
+                        offset.setPosition(position);
                         isAdd = false;
                         if (!transferInodes)
                             transferInodes = true;
                         break;
                     }
 
-                    if (!inode.equals(entryValue.getInode()) && filename.equals(entryValue.getFilename())) {
-                        entryValue.setInode(inode);
-                        entryValue.setPosition(position);
+                    if (!inode.equals(offset.getInode()) && filename.equals(offset.getFilename())) {
+                        offset.setInode(inode);
+                        offset.setPosition(position);
                         isAdd = false;
                         if (!transferInodes)
                             transferInodes = true;
@@ -486,9 +471,7 @@ public class FileStreamSourceTask extends SourceTask {
                 }
 
                 if (isAdd) {
-                    offset.put(size + "", value);
-                    size++;
-
+                    queue.add(value);
                     if (!transferInodes)
                         transferInodes = true;
                 }
@@ -496,9 +479,8 @@ public class FileStreamSourceTask extends SourceTask {
         }
     }
 
-    private OffsetValue[] getOffsets(LocalDateTime start) {
-
-        ArrayList<OffsetValue> offsetList = null;
+    private Offset[] getOffsets(LocalDateTime start) {
+        ArrayList<Offset> offsetList = null;
         try {
             Set<Path> paths = getFiles();
             for (Path file : paths) {
@@ -508,7 +490,7 @@ public class FileStreamSourceTask extends SourceTask {
                     continue;
 
                 if (lastModifyTime.compareTo(start) >= 0) {
-                    OffsetValue value = new OffsetValue(path, fileName, lastModifyTime);
+                    Offset value = new Offset(path, fileName, lastModifyTime);
                     value.setPosition(getPosition(value));
                     if (offsetList == null) {
                         offsetList = new ArrayList<>();
@@ -519,9 +501,9 @@ public class FileStreamSourceTask extends SourceTask {
         } catch (IOException e) {
             e.printStackTrace();
         }
-        OffsetValue[] offsets = null;
+        Offset[] offsets = null;
         if (offsetList != null) {
-            offsets = new OffsetValue[offsetList.size()];
+            offsets = new Offset[offsetList.size()];
             offsetList.toArray(offsets);
 
             if (offsets.length > 1) {
@@ -532,10 +514,10 @@ public class FileStreamSourceTask extends SourceTask {
         return offsets;
     }
 
-    private void changeStreamTo(int key) throws IOException {
-        OffsetValue offsetValue = offset.get(key + "");
-        String filename = offsetValue.getFilename();
-        long position = offsetValue.getPosition();
+    private void changeStreamTo(int index) throws IOException {
+        Offset offset = queue.get(index);
+        String filename = offset.getFilename();
+        long position = offset.getPosition();
         FileChannel fileChannel = FileChannel.open(Paths.get(path, filename), StandardOpenOption.READ);
         fileChannel.position(position);
 
@@ -552,22 +534,23 @@ public class FileStreamSourceTask extends SourceTask {
         this.position = position;
     }
 
+    /**
+     * 删除过期文件，防止 filePositions 过大！
+     */
     private void removeOlderFromFiles() {
-        if (filePositions == null || filePositions.size() <= 1) {
-            return;
-        }
         JSONObject tempFilePositions = filePositions;
         filePositions = new JSONObject();
         for (String filename : tempFilePositions.keySet()) {
             if (!filename.equals(this.filename)) {
                 LocalDateTime fileLastModifyTime = FileUtil.getLastModifyTime(path, filename);
+                LOG.info("rmIntervalHours: {}", rmIntervalHours);
                 if (fileLastModifyTime == null ||
                         LocalDateTime.now().minusHours(rmIntervalHours).compareTo(fileLastModifyTime) > 0) {
                     LOG.info("remove file: {fileName:{}, position:{}} from cache filePositions", filename, tempFilePositions.get(filename));
-                    continue;
-                }
-            }
-            filePositions.put(filename, tempFilePositions.get(filename));
+                } else
+                    filePositions.put(filename, tempFilePositions.get(filename));
+            } else
+                filePositions.put(filename, tempFilePositions.get(filename));
         }
 
         JSONObject tempFileKeys = fileKeys;
@@ -579,18 +562,13 @@ public class FileStreamSourceTask extends SourceTask {
                 if (fileLastModifyTime == null ||
                         LocalDateTime.now().minusHours(rmIntervalHours).compareTo(fileLastModifyTime) > 0) {
                     LOG.info("remove file: {inode:{}, filename:{}} from cache fileKeys", inode, filename);
-                    continue;
-                }
-            }
-            fileKeys.put(inode, filename);
+                } else
+                    fileKeys.put(inode, filename);
+            } else
+                fileKeys.put(inode, filename);
         }
         LOG.info("current fileKeys: {}", fileKeys);
         LOG.info("current filePositions: {}", filePositions);
-    }
-
-
-    private String logFilename() {
-        return filename;
     }
 
     /**
@@ -602,7 +580,7 @@ public class FileStreamSourceTask extends SourceTask {
      * @param offsetValue
      * @return
      */
-    private long getPosition(OffsetValue offsetValue){
+    private long getPosition(Offset offsetValue){
         String filename = offsetValue.getFilename();
         String inode = offsetValue.getInode();
         if (filePositions == null || filePositions.isEmpty()) {
@@ -622,19 +600,28 @@ public class FileStreamSourceTask extends SourceTask {
                 return position;
             }
         } else {
-            fileKeys.put(inode, filename);
-
             // TODO 讨论
             if (filePositions.containsKey(filename)) {
                 long position = filePositions.getLongValue(filename);
                 long fileSize = FileUtil.getFileSize(path, filename);
                 if (fileSize < position) {
                     filePositions.put(filename, 0L);
+                } else {
+                    if (fileKeys.size() > 0) {
+                        Collection<Object> values = fileKeys.values();
+                        Set<String> inodes = new HashSet<>();
+                        if (values.contains(filename)) {
+                            fileKeys.keySet().forEach(i -> {
+                                if (fileKeys.get(i).equals(filename)) {
+                                    inodes.add(i);
+                                }
+                            });
+                            inodes.forEach(i -> fileKeys.remove(i));
+                        }
+                    }
                 }
-
-//                filePositions.put(filename, 0L);
             }
-
+            fileKeys.put(inode, filename);
             return filePositions.getLongValue(filename);
         }
     }
@@ -644,7 +631,7 @@ public class FileStreamSourceTask extends SourceTask {
      */
     private void logOffset() {
         if (System.currentTimeMillis() - logOffsetTime > 30 * 1000) {
-            LOG.info("current offset: {}", offset);
+            LOG.info("current offsets: {}", queue);
             logOffsetTime = System.currentTimeMillis();
         }
     }
@@ -659,7 +646,7 @@ public class FileStreamSourceTask extends SourceTask {
         }
     }
 
-    private int compareTo(OffsetValue o1, OffsetValue o2) {
+    private int compareTo(Offset o1, Offset o2) {
         return (o1.getLastModifyTime()).compareTo(o2.getLastModifyTime());
     }
 

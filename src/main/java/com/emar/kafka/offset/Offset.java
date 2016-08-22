@@ -11,17 +11,17 @@ import java.time.LocalDateTime;
  * @Author moxingxing
  * @Date 2016/6/20
  */
-public class OffsetValue {
+public class Offset {
     private String path;
     private String filename;
     private String inode;
     private long position;
     private String lastModifyTime;
 
-    public OffsetValue() {
+    public Offset() {
     }
 
-    public OffsetValue(String path, String filename, String lastModifyTime) {
+    public Offset(String path, String filename, String lastModifyTime) {
         this.path = path;
         this.filename = filename;
         this.lastModifyTime = lastModifyTime;
@@ -29,7 +29,7 @@ public class OffsetValue {
         this.inode = FileUtil.getFileInode(path, filename);
     }
 
-    public OffsetValue(String path, String filename, LocalDateTime lastModifyTime) {
+    public Offset(String path, String filename, LocalDateTime lastModifyTime) {
         this(path, filename, DateUtils.getOffsetLastModifyTime(lastModifyTime));
     }
 

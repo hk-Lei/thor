@@ -1,6 +1,6 @@
 package com.emar.kafka.utils;
 
-import com.emar.kafka.offset.OffsetValue;
+import com.emar.kafka.offset.Offset;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -57,10 +57,10 @@ public class DateUtils {
             return LocalDateTime.parse(startTime, format);
     }
 
-    public static LocalDateTime getOffsetLastModifyTime(OffsetValue offsetValue){
+    public static LocalDateTime getOffsetLastModifyTime(Offset offset){
         DateTimeFormatter format = DateTimeFormatter.ofPattern(offsetPattern);
-        if (offsetValue != null) {
-            String lastModifyTime = offsetValue.getLastModifyTime();
+        if (offset != null) {
+            String lastModifyTime = offset.getLastModifyTime();
             return LocalDateTime.parse(lastModifyTime, format);
         } else {
             return null;
