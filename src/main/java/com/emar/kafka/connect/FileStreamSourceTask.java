@@ -212,7 +212,7 @@ public class FileStreamSourceTask extends SourceTask {
         }
     }
 
-    private Map<String, String> offsetKey() {
+    public Map<String, String> offsetKey() {
         return Collections.singletonMap(partitionKey, partitionValue);
     }
 
@@ -226,7 +226,7 @@ public class FileStreamSourceTask extends SourceTask {
      *          {$inode:$filename, ...}
      * @return
      */
-    private Map<String, String> offsetValue() {
+    public Map<String, String> offsetValue() {
         //TODO - 存储 offset
         Offset offsetValue = queue.getFirst();
         offsetValue.setPosition(position);
