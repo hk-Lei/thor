@@ -24,16 +24,12 @@ public class RecursivePath extends SimpleFileVisitor<Path> {
         this.paths = new HashSet<>();
     }
 
-
     @Override
     public FileVisitResult preVisitDirectory(Path file,
                                              BasicFileAttributes attrs)
             throws IOException {
-
         DirectoryStream<Path> stream = Files.newDirectoryStream(file, this.filter);
-        for (Path path : stream) {
-            this.paths.add(path);
-        }
+        stream.forEach(path -> this.paths.add(path));
         stream.close();
         return FileVisitResult.CONTINUE;
     }
