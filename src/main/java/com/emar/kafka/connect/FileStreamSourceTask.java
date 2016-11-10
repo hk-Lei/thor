@@ -136,6 +136,7 @@ public class FileStreamSourceTask extends SourceTask {
         // 不配置或者超过最大值 24，取默认最大值 24
         rmIntervalHours = (rmIntervalHours == 0 || rmIntervalHours > DEFAULT_MAX_RM_INTERVAL_HOURS) ?
                 DEFAULT_MAX_RM_INTERVAL_HOURS : rmIntervalHours;
+        LOG.info("rmIntervalHours: {}", rmIntervalHours);
         removeOlderFromFiles();
     }
 
@@ -498,7 +499,7 @@ public class FileStreamSourceTask extends SourceTask {
                     offsetList.add(value);
                 }
             }
-        } catch (IOException e) {
+        } catch (Exception e) {
             e.printStackTrace();
         }
         Offset[] offsets = null;
@@ -538,34 +539,41 @@ public class FileStreamSourceTask extends SourceTask {
      * 删除过期文件，防止 filePositions 过大！
      */
     private void removeOlderFromFiles() {
-        JSONObject tempFilePositions = filePositions;
-        filePositions = new JSONObject();
-        for (String filename : tempFilePositions.keySet()) {
-            if (!filename.equals(this.filename)) {
-                LocalDateTime fileLastModifyTime = FileUtil.getLastModifyTime(path, filename);
-                LOG.info("rmIntervalHours: {}", rmIntervalHours);
-                if (fileLastModifyTime == null ||
-                        LocalDateTime.now().minusHours(rmIntervalHours).compareTo(fileLastModifyTime) > 0) {
-                    LOG.info("remove file: {fileName:{}, position:{}} from cache filePositions", filename, tempFilePositions.get(filename));
+        if (filePositions != null && filePositions.size() > 0) {
+            JSONObject tempFilePositions = filePositions;
+            filePositions = new JSONObject();
+            for (String filename : tempFilePositions.keySet()) {
+                if (!filename.equals(this.filename)) {
+                    LocalDateTime fileLastModifyTime = FileUtil.getLastModifyTime(path, filename);
+                    if (fileLastModifyTime == null ||
+                            LocalDateTime.now().minusHours(rmIntervalHours).compareTo(fileLastModifyTime) > 0) {
+                        LOG.info("remove file: {fileName:{}, position:{}} from cache filePositions", filename, tempFilePositions.get(filename));
+                    } else
+                        filePositions.put(filename, tempFilePositions.get(filename));
                 } else
                     filePositions.put(filename, tempFilePositions.get(filename));
-            } else
-                filePositions.put(filename, tempFilePositions.get(filename));
+            }
+        } else {
+            filePositions = new JSONObject();
         }
 
-        JSONObject tempFileKeys = fileKeys == null ? new JSONObject() : fileKeys;
-        fileKeys = new JSONObject();
-        for (String inode : tempFileKeys.keySet()) {
-            String filename = tempFileKeys.getString(inode);
-            if (!filename.equals(this.filename)) {
-                LocalDateTime fileLastModifyTime = FileUtil.getLastModifyTime(path, filename);
-                if (fileLastModifyTime == null ||
-                        LocalDateTime.now().minusHours(rmIntervalHours).compareTo(fileLastModifyTime) > 0) {
-                    LOG.info("remove file: {inode:{}, filename:{}} from cache fileKeys", inode, filename);
+        if (fileKeys != null && fileKeys.size() > 0) {
+            JSONObject tempFileKeys = fileKeys;
+            fileKeys = new JSONObject();
+            for (String inode : tempFileKeys.keySet()) {
+                String filename = tempFileKeys.getString(inode);
+                if (!filename.equals(this.filename)) {
+                    LocalDateTime fileLastModifyTime = FileUtil.getLastModifyTime(path, filename);
+                    if (fileLastModifyTime == null ||
+                            LocalDateTime.now().minusHours(rmIntervalHours).compareTo(fileLastModifyTime) > 0) {
+                        LOG.info("remove file: {inode:{}, filename:{}} from cache fileKeys", inode, filename);
+                    } else
+                        fileKeys.put(inode, filename);
                 } else
                     fileKeys.put(inode, filename);
-            } else
-                fileKeys.put(inode, filename);
+            }
+        } else {
+            fileKeys = new JSONObject();
         }
         LOG.info("current fileKeys: {}", fileKeys);
         LOG.info("current filePositions: {}", filePositions);
