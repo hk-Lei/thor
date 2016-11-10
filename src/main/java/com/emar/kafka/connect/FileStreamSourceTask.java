@@ -553,7 +553,7 @@ public class FileStreamSourceTask extends SourceTask {
                 filePositions.put(filename, tempFilePositions.get(filename));
         }
 
-        JSONObject tempFileKeys = fileKeys;
+        JSONObject tempFileKeys = fileKeys == null ? new JSONObject() : fileKeys;
         fileKeys = new JSONObject();
         for (String inode : tempFileKeys.keySet()) {
             String filename = tempFileKeys.getString(inode);
